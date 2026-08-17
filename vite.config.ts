@@ -5,8 +5,10 @@ import { VitePWA } from "vite-plugin-pwa";
 import svgr from "vite-plugin-svgr";
 
 const isStorybook = process.env.STORYBOOK === "true";
+const base = process.env.VITE_BASE_PATH ?? "/";
 
 export default defineConfig({
+  base,
   plugins: [
     react(),
     svgr({
