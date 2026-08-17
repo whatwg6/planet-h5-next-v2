@@ -32,6 +32,7 @@
 | 客户端状态 | Zustand |
 | HTTP 请求 | Axios |
 | 样式 | Tailwind CSS + CSS Variables |
+| SVG 组件 | vite-plugin-svgr + SVGO，使用 `?react` 显式导入 |
 | UI | 项目内自研组件库 |
 | 组件文档 | Storybook |
 | PWA | vite-plugin-pwa + Workbox |
@@ -217,6 +218,9 @@ planet-h5-v2/
 │   ├── shared/
 │   │   ├── api/
 │   │   ├── assets/
+│   │   │   ├── icons/
+│   │   │   ├── images/
+│   │   │   └── brand/
 │   │   ├── auth/
 │   │   ├── config/
 │   │   ├── errors/
@@ -603,7 +607,7 @@ Storybook 用于组件示例、状态矩阵、交互测试、无障碍检查和�
 - 使用 `env(safe-area-inset-*)` 适配安全区域。
 - 只面向最新主流 iOS 和 Android 浏览器。
 
-## 12. public 与 assets
+## 12. public、assets 与 SVG
 
 `public` 存放必须保持固定文件名和 URL 的资源，例如：
 
@@ -613,7 +617,80 @@ Storybook 用于组件示例、状态矩阵、交互测试、无障碍检查和�
 
 这些文件不经过 Vite 的模块处理，会被原样复制到构建产物。
 
-普通业务图片和 SVG 放在 `src/shared/assets`，通过 TypeScript 导入，使其参与压缩、哈希和依赖分析。
+普通业务资源放在 `src/shared/assets`，通过 TypeScript 导入，使其参与压缩、哈希和依赖分析：
+
+```text
+shared/assets/
+├── icons/       # 单色、可跟随文本颜色的 SVG 图标
+│   ├── add.svg
+│   └── index.ts
+├── images/      # 插画和普通图片
+└── brand/       # Logo 等需要保留自身颜色的品牌资源
+```
+
+### 12.1 SVG React Component
+
+使用 `vite-plugin-svgr` 将 SVG 显式转换成 React Component。只有带 `?react` 的导入才转换，普通 `.svg` 导入仍返回资源 URL：
+
+```ts
+import AddIcon from "@/shared/assets/icons/add.svg?react";
+import emptyImageUrl from "@/shared/assets/images/empty.svg";
+```
+
+图标目录通过公共出口统一导出：
+
+```ts
+// shared/assets/icons/index.ts
+export { default as AddIcon } from "./add.svg?react";
+```
+
+```tsx
+import { AddIcon } from "@/shared/assets/icons";
+
+<AddIcon aria-hidden className="size-5 text-current" />;
+```
+
+TypeScript 在 `vite-env.d.ts` 中加载插件声明：
+
+```ts
+/// <reference types="vite-plugin-svgr/client" />
+```
+
+Vite 配置只处理带 `?react` 的 SVG，并保留 `viewBox`：
+
+```ts
+import svgr from "vite-plugin-svgr";
+
+svgr({
+  include: "**/*.svg?react",
+  svgrOptions: {
+    icon: true,
+    plugins: ["@svgr/plugin-svgo", "@svgr/plugin-jsx"],
+    svgoConfig: {
+      plugins: [
+        {
+          name: "preset-default",
+          params: {
+            overrides: {
+              removeViewBox: false,
+            },
+          },
+        },
+      ],
+    },
+  },
+});
+```
+
+工程依赖需包含 `vite-plugin-svgr`、`@svgr/plugin-svgo` 和 `@svgr/plugin-jsx`。
+
+SVG 约束：
+
+- `shared/assets/icons` 只放单色图标，源码使用 `currentColor` 控制 `fill` 或 `stroke`。
+- 多色插画和品牌图形不得强制改写颜色，放在 `images` 或 `brand` 并按 URL 使用。
+- 图标文件使用 kebab-case 命名。
+- 不在构建阶段无差别删除所有 `fill`、`stroke`，避免破坏描边图标和多色资源。
+- 纯装饰图标使用 `aria-hidden`；表达独立含义的图标必须提供可访问名称。
 
 `public` 中的文件会被直接公开，禁止存放密钥或其他敏感信息。
 
