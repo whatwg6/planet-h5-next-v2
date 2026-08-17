@@ -2,12 +2,28 @@ import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import svgr from "vite-plugin-svgr";
 
 const isStorybook = process.env.STORYBOOK === "true";
 
 export default defineConfig({
   plugins: [
     react(),
+    svgr({
+      include: "**/*.svg?react",
+      svgrOptions: {
+        icon: true,
+        plugins: ["@svgr/plugin-svgo", "@svgr/plugin-jsx"],
+        svgoConfig: {
+          plugins: [
+            {
+              name: "preset-default",
+              params: { overrides: { removeViewBox: false } },
+            },
+          ],
+        },
+      },
+    }),
     ...(!isStorybook
       ? [
           VitePWA({

@@ -7,3 +7,5 @@
 - 可点击目标至少为 44 × 44 CSS 像素，并提供可访问名称和键盘行为。
 - 动效必须尊重 `prefers-reduced-motion`。
 - Feature 私有组件不进入 `shared/ui`。
+- 单色图标放在 `shared/assets/icons`，使用 `currentColor` 并通过 `?react` 导入。
+- 装饰图标使用 `aria-hidden`；有独立含义的图标提供可访问名称。
