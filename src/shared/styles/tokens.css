@@ -1,0 +1,15 @@
+:root {
+  color-scheme: light;
+  --color-canvas: #f5f7fb;
+  --color-surface: #ffffff;
+  --color-primary: #315efb;
+  --color-text: #172033;
+  --color-text-muted: #687188;
+  --color-danger: #d92d20;
+  --color-border: #dfe3ec;
+  --radius-control: 0.75rem;
+  --radius-card: 1rem;
+  --shadow-card: 0 0.5rem 1.5rem rgb(23 32 51 / 8%);
+  --z-modal: 1000;
+  --z-toast: 1100;
+}
