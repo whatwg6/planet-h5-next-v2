@@ -4,6 +4,8 @@ coverage
 storybook-static
 playwright-report
 test-results
+.playwright-cli/
+output/playwright/
 .env
 *.tsbuildinfo
 .DS_Store
