@@ -1,798 +1,190 @@
-# H5 管理系统架构设计
-
-> 状态：草案，供架构评审使用。  
-> 当前阶段只定义工程骨架和约束，不包含具体业务功能实现。
+# H5 管理系统架构
 
-## 1. 设计目标
+> 状态：当前生效
+> 本文只记录长期有效的架构边界，不包含完整目录模板、代码教程、组件清单或阶段计划。
 
-本项目是面向移动端的 H5 管理系统，目标是建立一套能够长期扩展、边界明确且适合多人协作的前端架构。
+## 1. 文档职责
 
-架构需要满足：
+本项目是面向移动端的 H5 管理系统工程基线。架构目标是让路由、业务能力、后端接入和公共基础设施拥有清晰的归属，并允许系统在真实需求出现后逐步扩展。
 
-- 支持手机浏览器运行，并为未来 App WebView 接入保留边界。
-- 使用业务 Feature 组织功能，避免按技术类型堆积所有业务代码。
-- 路由配置与页面实现分离，并在 Route 中统一处理 `location.state` 模式分发。
-- 使用独立 Services 层管理真实后端接口、后端类型和可替换 Mock。
-- 区分服务端状态、客户端状态和组件局部状态。
-- 建设项目内完整的自研移动端组件库。
-- 支持安装为 PWA，但不缓存业务数据，也不支持离线写入。
-- 具备类型检查、自动化测试、组件文档和持续集成能力。
+本文规定新增和修改代码时必须遵守的边界。代码、配置和测试描述当前实现；某个示例目录尚不存在，不代表需要提前创建。具体做法见 [开发指南](development/README.md)，决策背景见 [架构决策记录](decisions/README.md)。
 
-## 2. 技术方案
+## 2. 技术基线
 
-| 领域 | 选型 |
-| --- | --- |
-| 运行环境 | Node.js 22 |
-| 包管理器 | pnpm 10 |
-| 开发语言 | TypeScript / TSX，开启严格模式 |
-| 前端框架 | React |
-| 构建工具 | Vite |
-| 路由 | React Router，Hash 路由 |
-| 服务端状态 | TanStack Query |
-| 客户端状态 | Zustand |
-| HTTP 请求 | Axios |
-| 样式 | Tailwind CSS + CSS Variables |
-| SVG 组件 | vite-plugin-svgr + SVGO，使用 `?react` 显式导入 |
-| UI | 项目内自研组件库 |
-| 组件文档 | Storybook |
-| PWA | vite-plugin-pwa + Workbox |
-| 单元与组件测试 | Vitest + React Testing Library |
-| 接口 Mock | Service 出口显式替换实现 |
-| 端到端测试 | Playwright |
-| 代码质量 | ESLint + Prettier + TypeScript |
-| 持续集成 | GitHub Actions |
+- React + Vite。
+- 严格 TypeScript/TSX；编译选项以仓库内 `tsconfig*` 为准。
+- pnpm；Node.js 与 pnpm 版本以 `package.json` 为准。
+- React Router Hash Router。
+- TanStack Query 管理服务端状态。
+- Zustand 管理确有跨组件需要的临时客户端状态。
+- Axios，由项目唯一的 HTTP Client 封装。
+- Tailwind CSS + CSS Variables。
+- 项目内自研 UI 组件库与 Storybook。
+- Vitest、React Testing Library 和 Playwright。
+- vite-plugin-pwa + Workbox，提供可安装能力。
 
-暂不绑定具体的认证协议、后端响应格式、WebView SDK 和监控厂商。
+依赖版本、脚本和 CI 步骤属于实现配置，不在本文重复维护。
 
-## 3. 顶层架构
+## 3. 分层与依赖方向
 
-项目采用单向依赖：
-
-```text
-main -> app -> pages -> features -> services -> shared
-         |       |          |
-         |       |          `--------------------> shared
-         |       `-------------------------------> shared
-         `---------------------------------------> shared
-
-testing -> app / pages / features / services / shared
-```
-
-箭头表示允许发生的源码依赖。
-
-### 3.1 app
-
-应用装配层，负责：
-
-- 应用启动和根组件。
-- 全局 Provider 组合。
-- Query Client 配置。
-- 路由实例创建。
-- 全局异常捕获。
-- PWA 生命周期接入。
-
-`app` 可以依赖 `pages` 和 `shared`，但业务代码不得反向依赖 `app`。
-
-### 3.2 pages
-
-纯路由层，负责：
-
-- URL 路径。
-- 路由参数声明。
-- 默认 View 与模式 View 的懒加载。
-- 基于 `location.state.routeMode` 的页面分发。
-- 鉴权、权限等路由元数据。
-- 汇总并导出路由表。
-
-`pages` 不放 JSX、请求、状态、业务组件或业务规则。页面 UI 由对应 Feature 的 `views` 提供。
-
-### 3.3 features
-
-业务功能层。每个 Feature 表示一个具体业务域或功能模块，例如 Users、Orders、Permissions。
-
-Feature 可以包含：
-
-- `views`：路由级页面组件。
-- `queries`：服务端数据查询。
-- `mutations`：服务端数据写入。
-- `components`：Feature 专用业务组件。
-- `hooks`：Feature 专用 Hook。
-- `store`：Feature 客户端状态。
-- `types.ts`：Feature 类型。
-- `index.ts`：Feature 公共出口。
-
-Feature 可以依赖对应的 Service 公共出口和 `shared`，不得直接创建 HTTP Client。
-Feature 之间如需复用业务能力，只能依赖对方的 `index.ts` 公共出口，并保持单向、无循环依赖。
-
-### 3.4 services
-
-后端服务层，按真实后端服务组织，负责：
-
-- 真实 API 函数。
-- 后端请求和响应类型。
-- 与真实 API 保持同一函数签名的 Mock。
-- 在 Service 公共出口显式导出 Mock 或真实实现，不与运行环境绑定。
-
-Service 不使用 React、TanStack Query 或 Zustand，只能依赖 `shared`。
-
-### 3.5 shared
-
-无具体业务归属的公共能力，包括：
-
-- HTTP Client。
-- 鉴权和权限契约。
-- 环境配置。
-- 统一错误模型。
-- 通用 Hooks 和工具。
-- 监控适配接口。
-- PWA 基础能力。
-- Route Mode 创建与分发能力。
-- 自研基础组件库。
-- 设计令牌、全局样式和静态资源。
-
-`shared` 不得依赖 `services`、`features`、`pages` 或 `app`。
-
-## 4. 推荐目录结构
-
-`users` 仅用于演示业务 Feature 的组织方式。没有实际业务时不提前创建空业务目录。
-
-```text
-planet-h5-v2/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-├── .storybook/
-│   ├── main.ts
-│   └── preview.ts
-├── docs/
-│   ├── component-guidelines.md
-│   └── feature-guidelines.md
-├── e2e/
-│   ├── app.spec.ts
-│   ├── routing.spec.ts
-│   └── pwa.spec.ts
-├── public/
-│   ├── icons/
-│   │   ├── icon-192.png
-│   │   ├── icon-512.png
-│   │   └── icon-maskable-512.png
-│   └── favicon.svg
-├── src/
-│   ├── app/
-│   │   ├── bootstrap/
-│   │   ├── providers/
-│   │   ├── router/
-│   │   └── App.tsx
-│   ├── pages/
-│   │   ├── user/
-│   │   │   ├── userListRoute.ts
-│   │   │   ├── userDetailRoute.ts
-│   │   │   └── index.ts
-│   │   ├── system/
-│   │   │   ├── homeRoute.ts
-│   │   │   ├── offlineRoute.ts
-│   │   │   ├── notFoundRoute.ts
-│   │   │   └── index.ts
-│   │   └── index.ts
-│   ├── features/
-│   │   ├── users/
-│   │   │   ├── views/
-│   │   │   │   ├── UserListView.tsx
-│   │   │   │   ├── UserCreateView.tsx
-│   │   │   │   ├── UserDetailView.tsx
-│   │   │   │   ├── UserDetailEditView.tsx
-│   │   │   │   └── UserPermissionView.tsx
-│   │   │   ├── queries/
-│   │   │   ├── mutations/
-│   │   │   ├── components/
-│   │   │   ├── hooks/
-│   │   │   ├── store/
-│   │   │   ├── types.ts
-│   │   │   └── index.ts
-│   │   ├── system/
-│   │   │   ├── views/
-│   │   │   └── index.ts
-│   │   └── pwa/
-│   │       ├── components/
-│   │       ├── hooks/
-│   │       └── index.ts
-│   ├── services/
-│   │   ├── user-service/
-│   │   │   ├── api/
-│   │   │   │   ├── getUserList.ts
-│   │   │   │   ├── getUserDetail.ts
-│   │   │   │   └── index.ts
-│   │   │   ├── mocks/
-│   │   │   │   ├── getUserList.mock.ts
-│   │   │   │   └── index.ts
-│   │   │   ├── types/
-│   │   │   │   ├── user.ts
-│   │   │   │   ├── userList.ts
-│   │   │   │   └── index.ts
-│   │   │   └── index.ts
-│   │   └── order-service/
-│   │       ├── api/
-│   │       ├── mocks/
-│   │       ├── types/
-│   │       └── index.ts
-│   ├── shared/
-│   │   ├── api/
-│   │   ├── assets/
-│   │   │   ├── icons/
-│   │   │   ├── images/
-│   │   │   └── brand/
-│   │   ├── auth/
-│   │   ├── config/
-│   │   ├── errors/
-│   │   ├── hooks/
-│   │   ├── lib/
-│   │   ├── monitoring/
-│   │   ├── pwa/
-│   │   ├── router/
-│   │   │   ├── createModeRoute.tsx
-│   │   │   ├── createRouteModeState.ts
-│   │   │   ├── types.ts
-│   │   │   └── index.ts
-│   │   ├── styles/
-│   │   ├── types/
-│   │   └── ui/
-│   ├── testing/
-│   │   ├── fixtures/
-│   │   ├── renderWithProviders.tsx
-│   │   └── setupTests.ts
-│   ├── main.tsx
-│   └── vite-env.d.ts
-├── .env.example
-├── eslint.config.js
-├── index.html
-├── package.json
-├── playwright.config.ts
-├── pnpm-lock.yaml
-├── prettier.config.mjs
-├── tailwind.config.ts
-├── tsconfig.json
-├── tsconfig.app.json
-├── tsconfig.node.json
-├── vite.config.ts
-├── vitest.config.ts
-├── CONTRIBUTING.md
-└── README.md
-```
-
-## 5. Pages 约定
-
-Pages 按业务域分组：
-
-```text
-pages/
-  user/
-    userListRoute.ts
-    userDetailRoute.ts
-    index.ts
-  index.ts
-```
-
-Route 文件负责路径、懒加载和 `location.state.routeMode` 模式分发，实际页面组件仍位于 Feature 的 `views`：
-
-```ts
-import { createModeRoute } from "@/shared/router";
-
-export const userDetailRoute = createModeRoute({
-  path: "/users/:userId",
-  defaultView: async () => {
-    const { UserDetailView } = await import(
-      "@/features/users/views/UserDetailView"
-    );
-    return UserDetailView;
-  },
-  modes: {
-    edit: async () => {
-      const { UserDetailEditView } = await import(
-        "@/features/users/views/UserDetailEditView"
-      );
-      return UserDetailEditView;
-    },
-    permission: async () => {
-      const { UserPermissionView } = await import(
-        "@/features/users/views/UserPermissionView"
-      );
-      return UserPermissionView;
-    },
-  },
-});
-```
-
-统一分发规则：
-
-- `location.state` 不存在或没有 `routeMode` 时渲染 `defaultView`。
-- `routeMode` 命中 `modes` 时渲染对应 View。
-- 未知 `routeMode` 回退到 `defaultView`，并在开发环境发出警告。
-- 同路径模式切换默认通过 History Push 完成，浏览器返回可恢复上一个模式。
-- `location.state` 只保存轻量导航状态，不保存接口数据或大型表单。
-
-模式跳转统一使用：
-
-```ts
-navigate(".", {
-  state: createRouteModeState("edit"),
-});
-```
-
-约束：
-
-- 文件名采用 `<pageName>Route.ts`。
-- Route 文件使用 `.ts`，不使用 `.tsx`。
-- Route 文件不得包含 JSX。
-- Route 中可以声明默认 View、模式 View 和路由元数据，但不得发请求或实现业务规则。
-- Route View 必须位于 `features/<domain>/views`。
-- `pages/<domain>/index.ts` 汇总本业务域路由。
-- `pages/index.ts` 是应用路由的统一出口。
-
-## 6. Feature 约定
-
-以 Users 为例：
-
-```text
-features/users/
-├── views/
-│   ├── UserListView.tsx
-│   ├── UserCreateView.tsx
-│   ├── UserDetailView.tsx
-│   ├── UserDetailEditView.tsx
-│   └── UserPermissionView.tsx
-├── queries/
-│   ├── userQueryKeys.ts
-│   ├── useUserListQuery.ts
-│   ├── useUserDetailQuery.ts
-│   └── index.ts
-├── mutations/
-│   ├── useCreateUserMutation.ts
-│   ├── useUpdateUserMutation.ts
-│   ├── useDeleteUserMutation.ts
-│   └── index.ts
-├── components/
-│   ├── UserListItem.tsx
-│   ├── UserForm.tsx
-│   └── index.ts
-├── hooks/
-│   ├── useUserPermission.ts
-│   └── index.ts
-├── store/
-│   ├── userFilterStore.ts
-│   ├── userDraftStore.ts
-│   └── index.ts
-├── types.ts
-└── index.ts
-```
-
-Feature 内部推荐依赖方向：
-
-```text
-views
-  |--> queries
-  |--> mutations
-  |--> components
-  `--> store
-
-mutations --> queries/userQueryKeys
-queries / mutations --> services
-queries / mutations / components / hooks / store --> shared
-```
-
-约束：
-
-- `views` 负责页面组合，不直接创建 Axios 实例。
-- `queries` 使用 TanStack Query 管理读取、缓存和请求状态。
-- `mutations` 管理写入、乐观更新或缓存失效。
-- `queries` 和 `mutations` 只能通过 Service 公共出口调用后端。
-- `components` 只放本 Feature 的业务组件。
-- `store` 只保存筛选条件、草稿和临时交互状态。
-- 服务端返回的数据不得复制进 Zustand。
-- `types.ts` 只保存前端独有的状态、表单和 Props 类型；后端类型归所属 Service。
-- Feature 对外能力通过 `index.ts` 暴露。
-- 禁止访问其他 Feature 的私有文件。
-
-## 7. Hook 归属规则
-
-Hook 的归属由语义决定，而不是由复用次数决定。
-
-### 通用技术 Hook
-
-不包含业务概念的 Hook 放入 `shared/hooks`：
-
-```text
-shared/hooks/
-  useDebounce.ts
-  useMediaQuery.ts
-  useOnlineStatus.ts
-```
-
-### 业务 Hook
-
-属于具体业务域的 Hook 留在所属 Feature：
-
-```text
-features/users/hooks/useUserPermission.ts
-```
-
-其他 Feature 如需使用，只能通过所属 Feature 的公共出口导入，并保持单向依赖、禁止循环依赖。
-
-### Query 和 Mutation Hook
-
-即使被多个模块使用，也继续留在拥有该数据的 Feature 的 `queries` 或 `mutations` 中，不移动到 `shared/hooks`。
-
-## 8. 状态管理
-
-### URL 状态
-
-由 React Router 管理：
-
-- 路径参数。
-- Search Params。
-- 可分享、可刷新恢复的页面状态。
-
-### History State
-
-由每个 Route 通过 `location.state.routeMode` 管理同一 URL 下的页面模式：
-
-- 没有 State 时进入该 Route 的默认 View。
-- Edit、Preview、Select 等非深链页面可作为 Route Mode。
-- 需要分享或从外部直接进入的状态不得放入 `location.state`，应使用路径参数或 Search Params。
-- View 不负责分发 Mode；分发规则集中在对应 `pages/*/*Route.ts`。
-
-### 服务端状态
-
-由 TanStack Query 管理：
-
-- 请求状态。
-- 数据缓存。
-- 重试和取消。
-- 缓存失效。
-- 并发请求去重。
-
-### 客户端状态
-
-由 Zustand 管理：
-
-- 跨页面临时草稿。
-- 筛选器编辑态。
-- 与服务端无关的交互状态。
-
-### 组件状态
-
-仅影响单个组件或局部组件树的状态使用 React 自身状态，不进入 Zustand。
-
-## 9. HTTP、Services 与 Mock
-
-`shared/api/httpClient.ts` 是 Axios 的唯一直接封装位置，负责：
-
-- Base URL。
-- 超时。
-- 请求取消。
-- 请求标识。
-- 公共请求头。
-- 错误归一。
-
-业务代码不得创建新的 Axios 实例。
-
-统一错误类型 `AppError` 至少区分：
-
-- Network。
-- Timeout。
-- Unauthorized。
-- Forbidden。
-- Server。
-- Cancelled。
-- Unknown。
-
-Token 刷新、退出登录等行为等待真实认证协议确定后再实现，不在架构阶段推测。
-
-### 9.1 Service 结构
-
-每个目录对应一个真实后端服务：
-
-```text
-services/user-service/
-├── api/
-│   ├── getUserList.ts
-│   ├── getUserDetail.ts
-│   └── index.ts
-├── mocks/
-│   ├── getUserList.mock.ts
-│   └── index.ts
-├── types/
-│   ├── user.ts
-│   ├── userList.ts
-│   └── index.ts
-└── index.ts
-```
-
-职责：
-
-- `api`：真实 URL、请求参数和 HTTP 调用。
-- `mocks`：仅为明确需要 Mock 的接口提供替代实现。
-- `types`：后端服务直接使用的请求、响应和实体类型，不使用 DTO 后缀。
-- Service 根 `index.ts`：公共出口，并决定导出真实实现还是 Mock 实现。
-
-Service 不使用 React、TanStack Query 或 Zustand。Feature 不得直接调用 `httpClient`。
-
-### 9.2 Mock 选择
-
-真实 API 与 Mock 必须共享同一个函数类型：
-
-```ts
-// services/user-service/index.ts
-export { getUserDetailApi } from "./api";
-export { getUserListMock as getUserListApi } from "./mocks";
-export type * from "./types";
-```
-
-恢复真实实现时只调整公共出口：
-
-```ts
-// services/user-service/index.ts
-export { getUserDetailApi, getUserListApi } from "./api";
-export type * from "./types";
-```
-
-约束：
-
-- 只给需要 Mock 的接口增加 `.mock.ts`。
-- 没有 Mock 的接口始终使用真实后端。
-- 是否使用 Mock 由 Service 公共出口显式决定，与 Dev、Test 或 Production 环境无关。
-- Mock 文件不得产生模块级副作用。
-- Feature 始终从 `services/<service>/index.ts` 导入，不感知当前实现。
-- 真实 API 使用 `getUserListApi`，Mock 使用 `getUserListMock`；对外始终导出为 `getUserListApi`。
-- React Query Hook 使用 `useUserListQuery`，避免与 Service API 混淆。
-
-## 10. 自研组件库
-
-自研组件位于 `shared/ui`，按能力分类：
-
-```text
-shared/ui/
-├── base/
-├── layout/
-├── navigation/
-├── form/
-├── display/
-├── feedback/
-├── overlay/
-├── interaction/
-└── index.ts
-```
-
-计划覆盖：
-
-- 基础：Icon、Divider、Portal。
-- 布局：Page、SafeArea、Card、Cell、List、Collapse。
-- 导航：NavBar、Tabs、TabBar。
-- 表单：Button、Input、Textarea、SearchInput、FormField、Checkbox、Radio、Switch、Stepper、Select、Picker、Cascader、DatePicker、Uploader。
-- 展示：Badge、Tag、Avatar、Tree、Progress。
-- 反馈：Loading、Skeleton、EmptyState、ErrorState、Result、Toast。
-- 弹层：Popup、Dialog、ActionSheet、Drawer、Popover、ImagePreview。
-- 交互：InfiniteScroll、PullRefresh、SwipeAction。
-
-每个组件使用统一结构：
-
-```text
-Button/
-  Button.tsx
-  Button.test.tsx
-  Button.stories.tsx
-  types.ts
-  index.ts
-```
-
-组件约束：
-
-- 表单组件采用 `value/onChange`。
-- 弹层组件采用 `open/onOpenChange`。
-- 视觉值来自语义化 CSS Variables。
-- 不直接硬编码品牌色、阴影和层级。
-- 支持必要的 ARIA 属性和键盘操作。
-- 最小触控区域为 44 × 44 CSS 像素。
-- 支持 `prefers-reduced-motion`。
-- 不引入第三方 UI 组件库。
-
-Storybook 用于组件示例、状态矩阵、交互测试、无障碍检查和视觉快照。
-
-## 11. 样式与移动端适配
-
-- 使用 Tailwind CSS 编写布局和组件样式。
-- 使用 CSS Variables 定义颜色、字号、间距、圆角、阴影和层级。
-- 首版只提供一套亮色主题，但令牌允许整体替换。
-- 使用 CSS 像素和响应式布局，不做全局 rem/vw 等比缩放。
-- 使用 `100dvh` 处理动态视口高度。
-- 使用 `env(safe-area-inset-*)` 适配安全区域。
-- 只面向最新主流 iOS 和 Android 浏览器。
-
-## 12. public、assets 与 SVG
-
-`public` 存放必须保持固定文件名和 URL 的资源，例如：
-
-- PWA 图标。
-- Maskable 图标。
-- favicon。
-
-这些文件不经过 Vite 的模块处理，会被原样复制到构建产物。
-
-普通业务资源放在 `src/shared/assets`，通过 TypeScript 导入，使其参与压缩、哈希和依赖分析：
-
-```text
-shared/assets/
-├── icons/       # 单色、可跟随文本颜色的 SVG 图标
-│   ├── add.svg
-│   └── index.ts
-├── images/      # 插画和普通图片
-└── brand/       # Logo 等需要保留自身颜色的品牌资源
-```
-
-### 12.1 SVG React Component
-
-使用 `vite-plugin-svgr` 将 SVG 显式转换成 React Component。只有带 `?react` 的导入才转换，普通 `.svg` 导入仍返回资源 URL：
-
-```ts
-import AddIcon from "@/shared/assets/icons/add.svg?react";
-import emptyImageUrl from "@/shared/assets/images/empty.svg";
-```
-
-图标目录通过公共出口统一导出：
-
-```ts
-// shared/assets/icons/index.ts
-export { default as AddIcon } from "./add.svg?react";
-```
-
-```tsx
-import { AddIcon } from "@/shared/assets/icons";
-
-<AddIcon aria-hidden className="size-5 text-current" />;
-```
-
-TypeScript 在 `vite-env.d.ts` 中加载插件声明：
-
-```ts
-/// <reference types="vite-plugin-svgr/client" />
-```
-
-Vite 配置只处理带 `?react` 的 SVG，并保留 `viewBox`：
-
-```ts
-import svgr from "vite-plugin-svgr";
-
-svgr({
-  include: "**/*.svg?react",
-  svgrOptions: {
-    icon: true,
-    plugins: ["@svgr/plugin-svgo", "@svgr/plugin-jsx"],
-    svgoConfig: {
-      plugins: [
-        {
-          name: "preset-default",
-          params: {
-            overrides: {
-              removeViewBox: false,
-            },
-          },
-        },
-      ],
-    },
-  },
-});
-```
-
-工程依赖需包含 `vite-plugin-svgr`、`@svgr/plugin-svgo` 和 `@svgr/plugin-jsx`。
-
-SVG 约束：
-
-- `shared/assets/icons` 只放单色图标，源码使用 `currentColor` 控制 `fill` 或 `stroke`。
-- 多色插画和品牌图形不得强制改写颜色，放在 `images` 或 `brand` 并按 URL 使用。
-- 图标文件使用 kebab-case 命名。
-- 不在构建阶段无差别删除所有 `fill`、`stroke`，避免破坏描边图标和多色资源。
-- 纯装饰图标使用 `aria-hidden`；表达独立含义的图标必须提供可访问名称。
-
-`public` 中的文件会被直接公开，禁止存放密钥或其他敏感信息。
-
-## 13. PWA 策略
-
-项目支持安装为 PWA，但不是离线业务应用。
-
-- 使用 `vite-plugin-pwa` 和 Workbox。
-- Manifest 使用相对 Scope 和 Hash 启动地址。
-- 使用 Standalone 显示模式。
-- 预缓存应用壳、构建资源、字体、图标和离线页面。
-- API 请求和业务数据使用 Network Only。
-- 不缓存写请求。
-- 不设计离线写入、后台同步和冲突解决。
-- 新版本可用时提示用户确认刷新，避免丢失编辑内容。
-- Service Worker 默认只在生产构建启用。
-- App WebView 内仍按普通 H5 运行，不假设 WebView 支持 PWA 安装。
-
-## 14. 测试策略
-
-### 单元测试
-
-使用 Vitest，覆盖：
-
-- 通用函数。
-- 配置校验。
-- 错误归一。
-- 权限判断。
-- Store 行为。
-
-### 组件测试
-
-使用 React Testing Library，覆盖：
-
-- 用户可见行为。
-- 交互状态。
-- 表单状态。
-- 异常和空状态。
-- 无障碍属性。
-
-### Service 测试与 Mock
-
-- 真实 Service API 使用 Vitest Mock 替换 `httpClient`，验证 URL、参数和错误传递。
-- Feature Query/Mutation 测试使用 Vitest 替换 Service 公共出口，不访问真实后端。
-- `services/*/mocks` 可以复用于需要固定数据的组件和页面测试。
-- 测试结束后必须恢复所有 Mock，避免用例之间共享状态。
-
-### 端到端测试
-
-使用 Playwright 的移动端 Chromium 和 WebKit 配置，验证：
-
-- 应用启动。
-- Hash 路由和刷新。
-- 页面懒加载。
-- 404 和全局异常。
-- PWA Manifest 和 Service Worker。
-- 离线应用壳。
-- 版本更新提示。
-
-## 15. 工程脚本
-
-项目至少提供：
-
-```text
-pnpm dev
-pnpm build
-pnpm typecheck
-pnpm lint
-pnpm format
-pnpm format:check
-pnpm test
-pnpm test:e2e
-pnpm storybook
-pnpm storybook:build
-pnpm verify
-```
-
-`verify` 应组合类型检查、Lint、格式检查、单元测试和生产构建。
-
-## 16. CI
-
-GitHub Actions 在 Pull Request 和主分支提交时执行：
-
-1. 使用锁定的 Node.js 和 pnpm 版本。
-2. `pnpm install --frozen-lockfile`。
-3. TypeScript 类型检查。
-4. ESLint 和格式检查。
-5. 单元与组件测试。
-6. 应用生产构建。
-7. Storybook 构建。
-8. Playwright 冒烟测试。
-
-## 17. 明确不在当前阶段实现的内容
-
-- 具体业务模块。
-- 真实后端接口。
-- 认证和 Token 刷新协议。
-- WebView Bridge 或厂商 SDK。
-- 监控厂商接入。
-- SSR 和 SEO。
-- 暗色主题和多品牌主题。
-- 业务数据离线缓存。
-- 离线写入、后台同步和冲突处理。
-
-以上能力在需求和真实协议明确后，通过既有边界逐步接入，不在基础架构中提前推测。
+生产代码只允许从上层指向下层。上层可以跳过中间层使用允许的下层能力，但下层不得反向依赖上层。
+
+| 来源              | 允许依赖                                                          | 说明                       |
+| ----------------- | ----------------------------------------------------------------- | -------------------------- |
+| `main`            | `app`、全局样式                                                   | 只负责启动应用             |
+| `app`             | `pages`、必须在 App 生命周期全局挂载的 Feature 公共出口、`shared` | 只做应用装配               |
+| `pages`           | 所属 Feature 的路由 View、`shared`                                | 只做路由声明和分发         |
+| `features`        | `services`、`shared`、其他 Feature 公共出口                       | Feature 间必须单向且无循环 |
+| `services`        | `shared`                                                          | 不依赖 React 状态层        |
+| `shared`          | `shared` 内部                                                     | 不含具体业务语义           |
+| `testing` / `e2e` | 被测生产层                                                        | 生产代码不得依赖测试代码   |
+
+允许存在 `Feature A -> Feature B/index.ts`，但依赖关系必须是有向无环图。若两个 Feature 互相依赖，应重新划分所有权或把真正无业务语义的能力下沉到 `shared`。
+
+决策背景见 [ADR-0001](decisions/0001-layering-and-ownership.md)。
+
+## 4. 各层职责
+
+### 4.1 main
+
+`src/main.tsx` 是浏览器入口，只加载全局样式并调用应用挂载能力。它不声明 Provider、路由或业务逻辑。
+
+### 4.2 app
+
+`app` 是应用装配层，负责：
+
+- 根组件与挂载流程。
+- 全局 Provider。
+- Query Client。
+- Router 实例。
+- 全局和路由级异常边界。
+- 需要全局挂载的能力，例如 PWA 更新提示。
+
+`app` 使用 Feature 时必须经过该 Feature 的根公共出口，不实现具体业务规则。
+
+### 4.3 pages
+
+`pages` 是纯路由层，负责：
+
+- URL Path 和参数。
+- 默认 View 与 Mode View 的懒加载声明。
+- 基于 `location.state.routeMode` 的 View 分发。
+- 按业务域汇总并导出路由表。
+
+Route 文件使用 `<pageName>Route.ts` 命名，不写 JSX，不请求数据，不持有 Store，不实现业务规则。实际页面 UI 位于 `features/<domain>/views`。
+
+为保持逐 View 懒加载，Route 可以直接导入它所声明的 `features/<owner>/views/<View>`。这是 Pages 深入 Feature 子路径的唯一例外；Pages 不得直接导入 Feature 的 Query、Mutation、Component、Hook 或 Store。
+
+### 4.4 features
+
+`features` 按真实业务能力组织代码。一个 Feature 可按需包含：
+
+- `views`：路由级页面组合。
+- `queries`：服务端读取与缓存。
+- `mutations`：服务端写入与缓存协调。
+- `components`：该 Feature 私有的业务组件。
+- `hooks`：该业务域拥有的 Hook。
+- `store`：临时客户端状态。
+- `types.ts`：前端独有的表单、展示和交互类型。
+- `index.ts`：公共出口。
+
+这些目录不是必须同时存在，不为对齐模板创建空目录。
+
+Feature 对 Feature 的复用只能通过提供方根 `index.ts`。Hook 的归属由语义决定，而不是复用次数决定；带业务语义的 Hook 即使被多个 Feature 使用，也留在所属 Feature。
+
+### 4.5 services
+
+`services` 按真实后端服务边界组织，负责：
+
+- `api`：URL、请求参数和 HTTP 调用。
+- `types`：后端请求、响应和实体类型。
+- `mocks`：仅针对明确需要替代的接口。
+- 根 `index.ts`：Service 唯一公共出口，并显式选择真实或 Mock 实现。
+
+Service 不使用 React、TanStack Query 或 Zustand。Feature 不得绕过 Service 直接调用 `httpClient`。后端类型直接由 Service 提供，不创建只为改名存在的 DTO 副本，也不使用 `Dto` 后缀。
+
+没有真实后端边界时不创建占位 Service。
+
+### 4.6 shared
+
+`shared` 只承载无具体业务归属的公共能力，例如：
+
+- HTTP Client、统一错误、环境配置。
+- 认证和权限契约、监控适配接口。
+- 通用 Hook 和工具。
+- Router 基础能力。
+- 基础 UI、样式令牌和静态资源。
+
+`shared` 不得依赖 `services`、`features`、`pages` 或 `app`。不能仅因为两个 Feature 都使用某段业务逻辑，就把它移入 `shared`。
+
+## 5. 路由模式
+
+项目使用 Hash Router。每个 Route 由自己的 Route 文件声明默认 View 和可选 Mode View，分发发生在 Route 中，不发生在 View 中。
+
+- `location.state` 不存在或没有 `routeMode`：渲染默认 View。
+- `routeMode` 命中 Route 声明的模式：渲染对应 View。
+- 未知 `routeMode`：回退默认 View；开发环境可发出警告。
+- 同一路径内切换 Mode 默认使用 History Push，使浏览器返回可恢复上一模式。
+
+`location.state` 只保存轻量、短生命周期且不要求刷新恢复的导航状态。需要分享、书签或刷新恢复的状态必须使用 Path 参数或 Search Params；接口数据和大型表单不得放入 History State。
+
+详见 [Route 开发指南](development/route.md) 和 [ADR-0002](decisions/0002-route-mode-dispatch.md)。
+
+## 6. 数据与状态所有权
+
+| 状态           | 唯一所有者     | 典型内容                             |
+| -------------- | -------------- | ------------------------------------ |
+| URL            | React Router   | Path 参数、Search Params、可分享状态 |
+| History State  | 对应 Route     | `routeMode` 等短期导航状态           |
+| 服务端状态     | TanStack Query | 请求状态、响应缓存、失效与重试       |
+| 客户端共享状态 | Zustand        | 临时草稿、筛选编辑态、纯交互状态     |
+| 局部状态       | React          | 单个组件或局部组件树状态             |
+
+服务端响应不得为了展示或跨组件访问而复制进 Zustand。Query 和 Mutation 属于数据所属 Feature；即使被多个调用方使用，也不移入 `shared/hooks`。
+
+详见 [状态指南](development/state.md)、[Query 指南](development/query.md) 和 [ADR-0004](decisions/0004-state-ownership.md)。
+
+## 7. HTTP、Service 与 Mock
+
+`shared/api/httpClient.ts` 是 Axios 的唯一实例和公共传输层封装位置。它负责公共配置、请求标识和错误归一，并保留标准取消能力。认证刷新等协议只在真实协议明确后接入。
+
+Feature 只能调用 Service 根出口。真实 API 与 Mock 必须保持同一函数签名；是否使用 Mock 由 Service 根 `index.ts` 的显式别名导出决定，与 Dev、Test 或 Production 环境无关。
+
+只为明确需要 Mock 的接口创建 `.mock.ts`，不得建立全局 Mock 开关、顶层 `mocks` 目录或 MSW 层。Mock 不得产生模块级副作用。
+
+详见 [Service 指南](development/service.md)、[Mock 指南](development/mock.md) 和 [ADR-0003](decisions/0003-service-and-explicit-mock-export.md)。
+
+## 8. UI、样式与资源
+
+- 无业务语义的基础组件位于 `shared/ui`；业务组件位于所属 Feature 的 `components`。
+- 通用组件通过公共出口使用，API 和无障碍要求见 [组件指南](development/component.md)。
+- 布局使用 Tailwind CSS，视觉值优先来自语义化 CSS Variables。
+- H5 布局使用动态视口和安全区能力；交互目标至少为 44 × 44 CSS 像素，并尊重 `prefers-reduced-motion`。
+- `public` 只存放必须保留固定 URL 的文件，例如 favicon 和 PWA 图标。
+- 普通资源位于 `src/shared/assets`，通过模块导入参与哈希和依赖分析。
+- 单色 SVG 图标使用 `currentColor` 并以 `?react` 显式转换；多色插画和品牌资源按 URL 使用。
+
+详见 [资源指南](development/asset.md)。
+
+## 9. PWA 边界
+
+项目提供可安装 PWA，但不是离线业务应用。
+
+- Manifest 与 Workbox 构建配置归根 `vite.config.ts`。
+- React 注册、更新生命周期和更新提示归 `features/pwa`；`app` 只负责全局挂载。
+- 只有不含 PWA 产品语义的通用浏览器 Hook 才进入 `shared`。
+- 生产构建可预缓存应用构建资源和安装所需静态资源。
+- API 和业务数据不得进入 Service Worker 缓存；显式 API 规则使用 Network Only。
+- 不实现离线写入、后台同步或冲突解决。
+- 新版本由用户确认后刷新，避免丢失编辑内容。
+- App WebView 中按普通 H5 运行，不假设支持 PWA 安装。
+
+离线说明页面不等同于自动断网跳转。具体缓存和验证要求见 [PWA 指南](development/pwa.md) 与 [ADR-0005](decisions/0005-pwa-cache-boundary.md)。
+
+## 10. 架构演进
+
+- 新增代码前先确认业务所有者和依赖方向，不从历史目录模板复制空结构。
+- 只改变实现方法时，更新对应开发指南。
+- 改变本文的不变量时，同步更新本文并新增 ADR；已接受 ADR 不直接改写结论。
+- 发现实现与本文冲突时，明确记录差异并决定修复实现或更新决策，不得以归档内容代替判断。
+- `docs/archive` 是不可变历史快照，不参与当前规则维护。

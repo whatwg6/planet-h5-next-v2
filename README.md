@@ -31,4 +31,4 @@ Node.js 版本要求为 22，包管理器为 pnpm 10。
 VITE_BASE_PATH=/planet-h5-next-v2/ pnpm build
 ```
 
-架构和依赖边界详见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，Feature 与组件开发约定位于 `docs/feature-guidelines.md` 和 `docs/component-guidelines.md`。
+文档入口见 [docs/README.md](docs/README.md)：架构边界、按任务拆分的开发指南、架构决策记录和历史归档分别维护，开发时只需读取与当前任务相关的部分。
