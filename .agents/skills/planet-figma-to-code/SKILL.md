@@ -1,6 +1,6 @@
 ---
 name: planet-figma-to-code
-description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 页面或组件，重点关注组件复用、Design Token、真实素材和浏览器视觉验证。仅当用户明确调用 $planet-figma-to-code 时使用。
+description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 页面或组件，重点关注组件复用、Design Token、真实素材和 Playwright 浏览器视觉验证。仅当用户明确调用 $planet-figma-to-code 时使用。
 ---
 
 # Planet Figma 设计还原
@@ -167,7 +167,28 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 
 ## 6. 浏览器验证
 
-实现完成后，在真实浏览器中打开目标页面，使用 Figma Frame 对应的 Viewport，并进入设计所表达的页面状态。
+实现完成后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中验证。不要改用手工截图，也不要为了截图额外编写 Playwright 测试文件。
+
+先确认 `npx` 可用，再使用 Playwright skill 提供的包装脚本：
+
+```bash
+command -v npx >/dev/null 2>&1
+export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playwright_cli.sh"
+```
+
+将截图和其他临时产物放在 `output/playwright/<任务名称>/`，不要新增其他顶层产物目录。
+
+按照以下顺序操作：
+
+1. 启动项目并确认目标 URL。
+2. 使用 `"$PLANET_PWCLI" open <URL> --headed` 打开页面。
+3. 使用 `"$PLANET_PWCLI" resize <width> <height>` 设置为 Figma Frame 对应的 Viewport。
+4. 使用 `"$PLANET_PWCLI" snapshot` 获取当前页面结构和稳定元素引用。
+5. 使用最新 Snapshot 中的引用执行 Click、Fill、Hover 或 Press，进入设计对应状态。
+6. 页面发生导航、弹层开关或明显 DOM 变化后重新 Snapshot。
+7. 页面稳定后使用 `"$PLANET_PWCLI" screenshot` 截图。
+
+元素引用失效时重新 Snapshot，不得绕过引用直接猜测选择器。只有 Playwright CLI 的显式命令无法完成等待或状态准备时，才使用 `run-code`。
 
 截图前确保：
 
@@ -175,6 +196,7 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 - 页面数据已经稳定。
 - Animation 和 Transition 不影响截图。
 - Modal、Dropdown、Selected、Expanded 等状态正确。
+- Playwright Console 中没有新增错误。
 
 截取浏览器 Screenshot，与 Figma Screenshot 一起进行视觉判断。重点检查：
 
