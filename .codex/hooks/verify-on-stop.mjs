@@ -19,7 +19,8 @@ if (result.status === 0) {
   process.stdout.write(
     `${JSON.stringify({
       decision: "block",
-      reason: "pnpm verify failed. Fix the reported failures, then run pnpm verify again before completing.",
+      reason:
+        "pnpm verify failed. Fix the reported failures, then run pnpm verify again before completing.",
     })}\n`,
   );
 }
