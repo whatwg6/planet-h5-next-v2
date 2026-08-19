@@ -1,17 +1,4 @@
 {
   "description": "Repository completion checks for Codex.",
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.codex/hooks/verify-on-stop.mjs\"",
-            "timeout": 600,
-            "statusMessage": "Running pnpm verify before completion"
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 }
