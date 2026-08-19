@@ -39,28 +39,35 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 
 ## 工作原则
 
-始终按照以下顺序工作：
+按照以下主线工作；先遵守仓库约定完成定向检查，再读取设计，不得颠倒项目规定的阅读顺序：
 
 ```mermaid
 flowchart TD
+  R["检查目标代码、配置、测试<br/>按 AGENTS.md 读取相关开发指南"]
   A["读取设计结构和视觉参考<br/>获取素材，形成布局、状态和响应式判断"]
-  B["理解代码库、现有组件<br/>Design Token 和工程规范"]
   C["完成 Token 映射<br/>决定组件复用、扩展或新建"]
   D["使用设计素材实现页面、状态和交互<br/>完成组件化复查"]
-  E["Playwright 构造目标状态并截图"]
+  V{"验证目标"}
+  P["页面：打开应用路由"]
+  S["组件：打开稳定 Storybook Story"]
+  E["Playwright CLI 构造目标状态并截图"]
   F["Vision 对比 Figma 设计稿与浏览器截图"]
   G{"差异类型"}
-  H["Playwright 再次构造目标状态并截图"]
-  I{"Vision 最终对比"}
-  J["建立并复跑 Playwright<br/>Browser Snapshot Baseline"]
+  Q{"用户明确要求新视觉回归<br/>或既有相关快照被预期变更影响？"}
+  J["在 CI 对齐环境中建立并复跑<br/>Browser Snapshot Baseline"]
+  K["报告 CLI + Vision 验收结果"]
+  X["记录证据、剩余差异和阻塞条件<br/>停止无效迭代并上报"]
 
-  A --> B --> C --> D --> E --> F --> G
+  R --> A --> C --> D --> V
+  V -- "页面" --> P --> E
+  V -- "独立组件" --> S --> E
+  E --> F --> G
   G -- "局部且有视觉意义" --> D
   G -- "结构性差异" --> A
-  G -- "无视觉意义的差异" --> H --> I
-  I -- "局部且有视觉意义" --> D
-  I -- "结构性差异" --> A
-  I -- "通过：无视觉意义的差异" --> J
+  G -- "通过或仅有渲染噪声" --> Q
+  G -- "连续无改善或超出范围" --> X
+  Q -- "是" --> J --> K
+  Q -- "否" --> K
 ```
 
 避免：
@@ -71,7 +78,23 @@ flowchart TD
 → 堆积像素补丁
 ```
 
-## 1. 理解设计稿并完成设计侧分析
+## 1. 先完成仓库定向
+
+调用 Figma 工具前，先按 `AGENTS.md` 检查与目标直接相关的代码、配置和测试，再从 `docs/development/README.md` 选择任务所需的最少指南。不要预先遍历整个仓库或读取无关文档。
+
+至少确认：
+
+- 目标是应用页面、路由级 View，还是独立组件。
+- 相关 route、view、component、Story、测试和公开出口当前如何组织。
+- `src/shared/ui` 的相关组件及公开 API、`src/shared/styles/tokens.css` 的现有 Design Token。
+- 现有布局、图标、素材、样式、响应式和测试约定。
+- 可用于浏览器验证的稳定宿主：页面使用应用路由；独立组件优先使用现有 Storybook Story。
+
+如果独立组件没有 Story，只有当组件具备可独立维护的稳定契约，且 Story 能长期记录有意义的 Variant、交互或边界内容时才新增或调整；否则报告缺少稳定验证宿主，不得为了截图向生产应用增加临时路由、临时 Story 或测试壳层。
+
+形成简短的仓库侧结论，记录目标落点、可复用能力、验证宿主和必须遵守的项目约定。此阶段只做定向，不在读取 Figma 设计前决定最终视觉实现。
+
+## 2. 理解设计稿并完成映射
 
 写代码前，先加载 `figma-design-to-code`，再调用 `get_design_context`。
 
@@ -89,21 +112,11 @@ flowchart TD
 - **结构数据**：检查页面层级、Auto Layout、Constraints、宽高、Padding、Gap、对齐、Typography、颜色、边框、圆角、阴影、Component、Variant 和 Variable。
 - **素材**：识别并获取真实 SVG、图标、图片、Logo、插画和字体信息或文件；不要要求用户提前手动导出。
 - **视觉**：获取 Figma Screenshot 作为最终参考，但不得只根据截图猜测页面结构和尺寸。
-- **Design Token**：提取颜色、字体、字号、行高、间距、圆角、边框和阴影的设计值与语义，待理解代码库后再完成项目 Token 映射。
+- **Design Token**：提取颜色、字体、字号、行高、间距、圆角、边框和阴影的设计值与语义，再结合仓库证据完成项目 Token 映射。
 
-先形成简短的设计侧结论，至少明确页面骨架、重复模式、组件及 Variant、状态与交互流程、响应式行为、布局策略、素材来源和待映射的 Token。结构无法解释时继续检查设计上下文，不要用 CSS 补丁掩盖理解缺失。
+形成简短的设计侧结论，至少明确页面骨架、重复模式、组件及 Variant、状态与交互流程、响应式行为、布局策略、素材来源和待映射的 Token。结构无法解释时继续检查设计上下文，不要用 CSS 补丁掩盖理解缺失。
 
-## 2. 理解代码库
-
-修改代码前，检查：
-
-- `AGENTS.md` 及任务直接相关的开发指南和配置。
-- `src/shared/ui` 的现有组件和公开 API。
-- `src/shared/styles/tokens.css` 的现有 Design Token。
-- 现有布局组件、图标和素材。
-- 项目的样式和响应式约定。
-
-将第 1 节提取的设计值和语义映射到项目现有 Token。只有现有 Token 无法表达且需求确实时才考虑扩展。Token 映射和第 3 节的组件决策完成后再生成代码。
+结合第 1 节的仓库证据，将设计值和语义映射到项目现有 Token、组件和布局模式。只有现有 Token 无法表达且需求确实时才考虑扩展。Token 映射和第 3 节的组件决策完成后再生成代码。
 
 ## 3. 决定组件方案
 
@@ -111,8 +124,8 @@ flowchart TD
 
 只对复用、扩展、新建或归属存在实际选择的候选项记录简短决策；显然可直接复用的组件无需为表格而表格。
 
-| 设计区域 | 语义与交互 | 代码库证据               | 决策与归属                     | 理由 |
-| -------- | ---------- | ------------------------ | -------------------------------- | ---- |
+| 设计区域 | 语义与交互 | 代码库证据               | 决策与归属                      | 理由 |
+| -------- | ---------- | ------------------------ | ------------------------------- | ---- |
 | ...      | ...        | 已有 / 内联重复 / 不存在 | 复用 / 扩展 / 新建 / 保留；归属 | ...  |
 
 按照以下边界决定归属：
@@ -140,11 +153,11 @@ flowchart TD
 
 如果需要 Breaking API Change、大范围修改 Design System、重构共享组件架构或大范围修改全局 Token，停止扩大任务并报告需要决策的问题。
 
-## 4. 实现页面
+## 4. 实现页面或组件
 
 按以下顺序实现：
 
-1. **结构**：完成页面层级、组件层级、布局模型和组件复用。
+1. **结构**：完成目标层级、组件层级、布局模型和组件复用。
 2. **几何**：调整宽高、Padding、Gap、对齐和定位。
 3. **视觉**：调整 Typography、颜色、边框、圆角和阴影。
 4. **素材**：处理图标、图片、Logo 和插画。
@@ -176,7 +189,8 @@ flowchart TD
 
 如果设计中存在真实素材：
 
-- 优先从 Figma 获取。
+- 已有项目素材或图标的 glyph 经结构与视觉对比确认一致时直接复用；名称相同不能作为匹配证据。
+- 没有已验证一致的项目素材时，从 Figma 获取真实导出。
 - 不使用 Placeholder 或 Emoji 代替图标。
 - 不自行绘制近似 SVG。
 - 不随意替换成不同图片。
@@ -188,9 +202,11 @@ flowchart TD
 
 先判断素材是否单色、是否需要随状态或主题变色，以及它是 UI 控件还是品牌/内容素材，再选择使用方式。不得把所有 Figma SVG 一律作为 `<img>`，也不得把所有 SVG 一律转成 React Component。
 
-- **单色 UI Glyph/Icon**：下载真实 Figma SVG，使用显式 `?react` 导入为 React Component；通过 `className` 控制尺寸，并通过 `currentColor` 继承语义颜色。
+- **单色 UI Glyph/Icon**：没有已验证一致的现有图标时，下载真实 Figma SVG；确认其不依赖当前 SVGR 流程会丢失的内部颜色或透明度关系后，使用显式 `?react` 导入为 React Component，通过 `className` 控制尺寸，并通过 `currentColor` 继承语义颜色。
 - **多色 SVG、Logo、品牌图形和插画**：保留原始颜色，以 URL 导入并使用 `<img>`。
-- **照片和其他位图**：以 URL 导入并使用 `<img>`，根据语义提供 `alt`。
+- **照片和其他位图**：以 URL 导入并使用 `<img>`。
+
+所有装饰性 SVG 和图片分别使用 `aria-hidden` 或空 `alt`；独立表达含义的图标提供可访问名称，有内容语义的 `<img>` 提供有效 `alt`。图标不得成为状态的唯一提示。
 
 不要为了复用单色图标流程而破坏品牌色、内容色或插画内部色彩关系。
 
@@ -209,18 +225,28 @@ flowchart TD
 
 该配置会把非 `none` 的 `fill` 和 `stroke` 颜色转为 `currentColor`，同时保留原本的填充/描边模型与 `stroke-width`。保留 `viewBox`，让尺寸由 CSS 控制。
 
-如果颜色透明度由 Design Token 或调用处的 Class 控制，可以额外删除 `fill-opacity` 和 `stroke-opacity`；调用处必须补上对应的语义颜色与透明度。不要在没有调用方补偿的情况下丢弃透明度信息。
+使用 `?react` 前检查 SVG 源文件和项目实际 SVGR/SVGO 配置。当前项目配置会对所有 `?react` SVG 删除 `fill-opacity` 和 `stroke-opacity`；只有透明度可以由单一调用方语义样式完整恢复时，素材才适合直接进入该流程。
+
+如果图标依赖多个 path 的局部透明度，单个调用方 Class 不能恢复其层级：固定颜色素材应保留原始 SVG 并按 URL 使用；必须同时支持 `currentColor` 和局部透明度时，报告需要调整共享 SVGR 配置的决策，不得在页面实现中静默修改全局配置或用 CSS 补丁近似。
 
 如果 Vite 与 Vitest 使用独立配置，必须抽取并复用同一份 SVGR/SVGO 配置。否则测试环境可能把 `?react` SVG 当成 URL 或 Data URI，而不是 React Component。
 
-## 6. 视觉迭代闭环
+## 6. 浏览器视觉迭代闭环
 
-初版实现达到可验证状态后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中构造目标状态、交互和截图。迭代阶段不要改用手工截图，也不要为了截图编写临时 Playwright 测试文件。
+初版实现达到可验证状态后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中构造目标状态、交互和截图。CLI + Vision 验收是本 skill 的默认验证方式；迭代阶段不要改用手工截图，也不要为了截图编写临时 Playwright 测试文件。
 
 工具职责不可混用：
 
-- **Playwright**：负责真实浏览器渲染、交互、状态构造和截图。
+- **Playwright CLI**：负责真实浏览器渲染、交互、状态构造和截图。
 - **Vision**：负责对比 Figma 设计稿与浏览器截图，识别差异并判断差异是否具有视觉意义。
+
+### 选择稳定验证宿主
+
+- **页面或路由级 View**：启动应用，使用可直接进入目标状态的应用 URL。
+- **独立组件**：启动 Storybook，使用对应 Story 的稳定 URL；通过 Args、Story 状态或真实交互构造 Variant。不得为了验证组件向生产应用增加临时路由。
+- **组合目标**：按实际交付边界选择宿主；需要页面上下文才能成立时按页面验证，否则按组件验证。
+
+宿主无法稳定呈现设计状态时，只补齐属于本次真实交付且具有长期价值的 Story、确定性 props 或已有测试数据装配。若不存在合理的长期宿主，或这要求 API 接入、业务逻辑或其他超出本 skill 范围的改动，停止扩大任务并报告阻塞条件。
 
 先确认 `npx` 可用，再使用 Playwright skill 提供的包装脚本：
 
@@ -229,16 +255,16 @@ command -v npx >/dev/null 2>&1
 export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playwright_cli.sh"
 ```
 
-将截图和其他临时产物放在 `output/playwright/<任务名称>/`，不要新增其他顶层产物目录。
+创建 `output/playwright/<任务名称>/`，并将其作为以下 Playwright CLI 命令的工作目录，使裸 `snapshot`、`screenshot` 和其他临时产物都留在该目录；不要新增其他顶层产物目录。
 
 按照以下顺序操作：
 
-1. 启动项目并确认目标 URL。
-2. 使用 `"$PLANET_PWCLI" open <URL> --headed` 打开页面。
+1. 从仓库根目录启动应用或 Storybook，并确认目标绝对 URL。
+2. 从任务产物目录使用 `"$PLANET_PWCLI" open <URL> --headed` 打开目标。
 3. 使用 `"$PLANET_PWCLI" resize <width> <height>` 设置为 Figma Frame 对应的 Viewport。
-4. 使用 `"$PLANET_PWCLI" snapshot` 获取当前页面结构和稳定元素引用。
+4. 使用 `"$PLANET_PWCLI" snapshot` 获取当前结构和稳定元素引用。
 5. 使用最新 Snapshot 中的引用执行 Click、Fill、Hover 或 Press，进入设计对应状态。
-6. 页面发生导航、弹层开关或明显 DOM 变化后重新 Snapshot。
+6. 发生导航、弹层开关或明显 DOM 变化后重新 Snapshot。
 7. 页面稳定后使用 `"$PLANET_PWCLI" screenshot` 截图。
 
 先在 Figma Frame 对应的 Viewport 检查视觉还原，再额外验证代表性的更窄和更宽移动 Viewport，重点检查流式伸缩、文案换行和横向 Overflow。例如参考 Frame 为 393px 时，430px 可以作为更宽 Viewport，但它不是固定要求；应根据目标设备范围选择验证宽度。
@@ -262,7 +288,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 5. 图标、图片和其他素材。
 6. Overflow、换行和响应式问题。
 
-根据 Vision 识别的主要差异修改实现，然后重新用 Playwright 构造同一状态并截图。重复这一闭环直到不再存在有视觉意义的主要差异；3～5 轮是常见迭代区间，不是最低轮数、通过条件或硬性上限。每轮优先处理：
+根据主要差异修改实现，然后重新构造同一状态并截图。每轮优先处理：
 
 ```text
 Layout
@@ -275,23 +301,42 @@ Layout
 → Minor Polish
 ```
 
-如果 Vision 发现某个区域不正确，再使用 Figma 结构化尺寸、DOM Bounding Box、Computed Style 或浏览器测量结果确认原因，不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。
+如果 Vision 发现某个区域不正确，使用 Figma 结构化尺寸、DOM Bounding Box、Computed Style 或浏览器测量结果确认原因；不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。
 
-一旦 Vision 和结构数据表明差异来自错误的页面层级、组件边界或布局模型，或连续微调未能缩小主要差异，立即结束当前微调循环并回到分析阶段；修正理解并重新实现后，再进入新的验证循环，不要继续堆叠 CSS 补丁。
+### 停止无效迭代
 
-## 7. 最终验收与 Snapshot Baseline
+- 同一主要差异经过连续两次有证据的局部修改仍未缩小时，停止微调并回到设计、组件和布局分析，只做一次根因修正。
+- 根因修正后差异仍未缩小，或确认依赖缺失字体、不可获取素材、不稳定数据、浏览器环境差异、外部权限或超出任务范围的改动时，结束当前视觉循环。
+- 结束循环时记录对比截图、测量证据、已尝试修正、剩余差异和继续所需条件；不得宣称视觉验收通过，也不得创建或更新 Baseline 来掩盖失败。
+- 如果继续需要新的用户选择、权限或范围，报告具体阻塞并请求决策；获得新证据或条件后再恢复验证。
 
-完成主要迭代且不存在已知结构性差异后，必须再次由 Playwright 构造目标状态并截图，再由 Vision 与设计稿做独立的最终对比：
+## 7. 最终视觉验收与可选 Snapshot Baseline
 
-- 存在有视觉意义的差异：回到第 6 节的迭代闭环，修改后重新进入最终验收。
-- 仅存在抗锯齿、阴影、SVG 栅格化、子像素等渲染噪声：可以忽略。
-- 仍存在结构性差异：回到设计、组件和布局分析阶段，不得判定通过。
+完成主要迭代且不存在已知结构性差异后，必须再次由 Playwright CLI 构造目标状态并截图，再由 Vision 与设计稿做独立的最终对比：
+
+- 存在可在当前范围内修复的视觉差异：回到第 6 节，修改后重新进入最终验收。
+- 仅存在抗锯齿、阴影、SVG 栅格化、子像素等无视觉意义的渲染噪声：可以判定通过。
+- 仍存在结构性差异或已触发停止条件：不得判定通过；按第 6 节记录证据并报告。
 
 Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Baseline，也不使用严格 Pixel Equality 作为通过标准。
 
-只有最终 Vision 验收通过后，才为验收状态建立 Playwright 视觉回归用例：使用稳定步骤重建相同的 Browser、Viewport、数据和页面状态，并通过 `expect(page).toHaveScreenshot(...)` 记录对应 Playwright Project 的 Browser Snapshot Baseline。先更新 Snapshot，再正常运行同一用例确认 Browser ↔ Browser 比较通过。
+### 仅在明确需要时建立视觉回归用例
 
-不得把 Figma Screenshot 复制或转换为 Baseline，不得手工把迭代期 CLI Screenshot 塞入 Snapshot 目录，也不得在设计验收前更新 Baseline 来消除失败。多个 Playwright Project 需要各自渲染和验收自己的 Baseline。
+默认停留在 Playwright CLI + Vision 验收，不创建 `@playwright/test` spec 或 Snapshot Baseline。只有以下情况才进入视觉回归测试：
+
+- 用户明确要求新增或更新视觉回归测试文件时，可以按仓库测试分层新建或维护用例。
+- 仓库已经存在与本次目标直接相关的 Screenshot 用例，且最终 Vision 已确认的预期视觉变化使其失效时，必须维护现有用例和 Baseline；这不授权为其他目标新建视觉测试。
+
+即使具备授权，也必须先确认：
+
+- 最终 Vision 验收已经通过。
+- Browser、Viewport、字体、Locale、Timezone、Animation、数据和页面或 Story 状态可以确定性重建。
+- Baseline 能在与 CI 相同的操作系统、锁定浏览器版本和字体环境中生成；不得默认使用本机 macOS 快照满足 Ubuntu CI。
+- 目标符合仓库的测试分层；独立组件没有既有视觉回归基础设施时，报告需要项目级决策，不得把它硬塞进应用 E2E 或增加临时生产路由。
+
+满足条件时，优先使用仓库已有的容器或 CI Snapshot 更新流程，通过 `expect(page).toHaveScreenshot(...)` 为仓库要求的 Playwright Project 和平台生成 Baseline，先更新 Snapshot，再在同一环境正常运行同一用例以及项目要求的 E2E 命令。仓库没有 CI 等价生成入口、环境未固定或 CI 平台 Baseline 无法生成时，不自行发明基础设施，也不创建不可维护的本地快照；报告缺失前提并请求项目级决策。
+
+不得把 Figma Screenshot 复制或转换为 Baseline，不得手工把迭代期 CLI Screenshot 塞入 Snapshot 目录，也不得在设计验收前更新 Baseline 来消除失败。
 
 ## 8. 完成检查
 
@@ -299,14 +344,15 @@ Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Base
 
 ### 设计还原
 
-- 页面层级和主要布局正确。
+- 目标层级和主要布局正确。
 - 尺寸、间距和对齐没有明显问题。
 - Typography、颜色、边框、圆角和阴影合理。
 - 使用了正确素材且没有遗漏主要 UI。
-- Figma Frame 对应的 Viewport、代表性的更窄和更宽移动 Viewport，以及关键页面状态已在浏览器中验证；至少包含一个非 Figma Frame 宽度的 Viewport。
-- Playwright 截图与 Figma 设计稿的 Vision 对比已收敛，并通过独立的最终验收；已忽略的差异仅为无视觉意义的渲染噪声。
-- 不存在未解决的结构性差异；若曾回到分析阶段，修正后的实现已重新走完视觉闭环。
-- Playwright 视觉回归用例可以稳定重建验收状态；Baseline 由验收后的 Browser 渲染生成，正常运行时 Browser ↔ Browser 比较通过。
+- 已使用应用路由或稳定 Storybook Story 作为与交付边界匹配的验证宿主，没有为截图添加临时生产入口。
+- Figma Frame 对应的 Viewport、代表性的更窄和更宽移动 Viewport，以及关键目标状态已在浏览器中验证；至少包含一个非 Figma Frame 宽度的 Viewport。
+- 未触发停止条件时，Playwright 截图与 Figma 设计稿的 Vision 对比已收敛，并通过独立的最终验收；已忽略的差异仅为无视觉意义的渲染噪声。
+- 触发停止条件时，未宣称视觉验收通过、未用 Baseline 掩盖失败，并已记录证据、剩余差异和继续所需条件。
+- 只有用户明确要求新视觉回归，或既有相关 Screenshot 用例被预期视觉变更影响，并且满足稳定性、测试分层与 CI 环境条件时，才创建或维护 Playwright 视觉回归；否则已记录“不适用”或未执行原因。
 - 没有明显 Overflow 或 Layout Shift。
 
 ### 工程质量
@@ -322,9 +368,17 @@ Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Base
 - 内部布局使用可扩展的关系式约束，在非 Figma 宽度下能合理伸缩和换行。
 - 单色图标使用 React SVG 与 `currentColor`；多色、品牌和内容素材继续使用 `<img>` 并保留原色。
 - SVGO 没有删除 `stroke` 或 `stroke-width`，描边图标的线宽与几何未被破坏。
+- 含局部透明度的 SVG 已检查实际导入链路，没有依赖调用处单一 `opacity` 补偿多个透明度层级。
 - Vite 与 Vitest 存在独立配置时复用了同一份 SVGR/SVGO 配置。
 - TypeScript 类型正确且没有新增 Console Error。
-- `pnpm verify` 执行成功。
+
+### 工程验证
+
+- 运行受影响范围的最小单元、组件或浏览器测试。
+- 交付前运行 `pnpm verify`。
+- 新增或修改 Story、使用 Storybook 作为组件验证宿主，或改变共享组件公共 API 时，额外运行 `pnpm storybook:build`。
+- 修改 Route、部署路径、PWA、Playwright 用例或 Snapshot Baseline 时，额外运行 `pnpm test:e2e`。
+- `pnpm verify` 不包含 Storybook 构建和 E2E；无法执行的命令必须说明原因，不得宣称已通过。
 
 ## 9. 完成报告
 
@@ -357,15 +411,27 @@ Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Base
 - ...
 
 浏览器验证：
+- 验证宿主（应用路由 / Storybook Story）：
 - Figma Frame 对应的 Viewport：
 - 额外移动 Viewport：
-- 页面状态：
+- 目标状态：
 - Vision 迭代轮次与主要修正：
 - 最终对比结论：
-- Playwright Snapshot Baseline：
+- Playwright Snapshot Baseline（已维护 / 不适用 / 未执行及原因）：
 
 剩余视觉差异：
 - ...
+
+停止条件与证据：
+- 未触发 / 触发原因：
+- 最后截图与测量证据：
+- 已尝试方案：
+
+工程验证：
+- 受影响测试：
+- pnpm verify：
+- pnpm storybook:build（通过 / 不适用 / 未执行及原因）：
+- pnpm test:e2e（通过 / 不适用 / 未执行及原因）：
 
 需要上层决策的问题：
 - ...
