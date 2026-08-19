@@ -68,7 +68,7 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 - **信息层级**：识别页面主任务、阅读顺序、主要内容、辅助信息和主要操作。
 - **区域关系**：识别导航、内容、操作、反馈、弹层等区域，以及它们的包含、并列和覆盖关系。
 - **重复模式**：识别列表项、卡片、表单项、操作组等重复结构，判断真正的组件边界。
-- **布局规则**：区分固定与流式尺寸、滚动区域、吸顶区域、弹性空间和响应式约束。
+- **布局规则**：区分固定与流式尺寸、滚动区域、吸顶区域、弹性空间和响应式约束。将 Figma Frame 宽度视为视觉验证 Viewport，不得直接推导为生产页面宽度上限。
 - **状态关系**：理解默认、选中、禁用、加载、空、错误、展开和弹层等状态之间的关系。
 - **语义角色**：判断元素是按钮、链接、输入、标签、列表项、卡片还是纯装饰，不以外观代替语义。
 
@@ -153,6 +153,14 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 
 避免大量 Absolute Position、Magic Number、Inline Style 和截图专用补丁。允许使用设计中真实存在的特殊值，但不要为了消除渲染噪声破坏合理布局。
 
+### 响应式宽度
+
+- Figma Frame 的宽度是视觉验证 Viewport，不是生产页面的 `max-width`。例如 393px Frame 只表示应在 393px Viewport 检查几何和还原度。
+- 页面根容器默认使用 `width: 100%` 或等价的流式布局。不得仅因为参考 Frame 为 393px 就写入 `width: 393px`、`max-width: 393px` 或对应的固定工具类。
+- 只有产品明确要求居中限宽、代码库已有壳层约束，或设计结构与多个 Viewport 的证据明确存在最大内容宽度时，才允许设置 `max-width`。使用前说明依据，不得从单个 Frame 宽度猜测。
+- 内部布局优先使用 `flex`、`grid`、`min-width: 0`、`gap`、`minmax()`、`clamp()` 等关系式约束。不要把某一 Frame 宽度下的子区域尺寸机械转写为固定 `width` 或 `max-width`。
+- 需要在 Figma 自然宽度保持特定几何时，使用可扩展的间距、弹性比例和尺寸边界表达关系；同时保证更宽或更窄的移动 Viewport 能合理伸缩、换行，且不产生横向 Overflow。
+
 ## 5. 处理素材
 
 如果设计中存在真实素材：
@@ -164,6 +172,35 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 - 不根据名称相似就替换成图标库资源。
 
 完成前，将素材保存到项目规定目录并使用稳定引用。最终代码不得依赖临时 Figma Asset URL。
+
+### SVG React 与图片决策
+
+先判断素材是否单色、是否需要随状态或主题变色，以及它是 UI 控件还是品牌/内容素材，再选择使用方式。不得把所有 Figma SVG 一律作为 `<img>`，也不得把所有 SVG 一律转成 React Component。
+
+- **单色 UI Glyph/Icon**：下载真实 Figma SVG，使用显式 `?react` 导入为 React Component；通过 `className` 控制尺寸，并通过 `currentColor` 继承语义颜色。
+- **多色 SVG、Logo、品牌图形和插画**：保留原始颜色，以 URL 导入并使用 `<img>`。
+- **照片和其他位图**：以 URL 导入并使用 `<img>`，根据语义提供 `alt`。
+
+不要为了复用单色图标流程而破坏品牌色、内容色或插画内部色彩关系。
+
+### `currentColor` 与 SVGO 安全配置
+
+只对显式 `?react` 的单色图标应用强制 `currentColor` 转换。不得使用 `removeAttrs` 删除 `fill`、`stroke` 或 `stroke-width`；删除 `stroke` 或 `stroke-width` 会破坏搜索、箭头等描边图标的几何。
+
+推荐在 SVGO 配置中使用：
+
+```js
+{
+  name: "convertColors",
+  params: { currentColor: true },
+}
+```
+
+该配置会把非 `none` 的 `fill` 和 `stroke` 颜色转为 `currentColor`，同时保留原本的填充/描边模型与 `stroke-width`。保留 `viewBox`，让尺寸由 CSS 控制。
+
+如果颜色透明度由 Design Token 或调用处的 Class 控制，可以额外删除 `fill-opacity` 和 `stroke-opacity`；调用处必须补上对应的语义颜色与透明度。不要在没有调用方补偿的情况下丢弃透明度信息。
+
+如果 Vite 与 Vitest 使用独立配置，必须抽取并复用同一份 SVGR/SVGO 配置。否则测试环境可能把 `?react` SVG 当成 URL 或 Data URI，而不是 React Component。
 
 ## 6. 浏览器验证
 
@@ -187,6 +224,8 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 5. 使用最新 Snapshot 中的引用执行 Click、Fill、Hover 或 Press，进入设计对应状态。
 6. 页面发生导航、弹层开关或明显 DOM 变化后重新 Snapshot。
 7. 页面稳定后使用 `"$PLANET_PWCLI" screenshot` 截图。
+
+先在 Figma Frame 对应的自然宽度检查视觉还原，再额外验证代表性的更窄和更宽移动 Viewport，重点检查流式伸缩、文案换行和横向 Overflow。例如参考 Frame 为 393px 时，430px 可以作为更宽 Viewport，但它不是固定要求；应根据目标设备范围选择验证宽度。
 
 元素引用失效时重新 Snapshot，不得绕过引用直接猜测选择器。只有 Playwright CLI 的显式命令无法完成等待或状态准备时，才使用 `run-code`。
 
@@ -238,7 +277,7 @@ Layout
 - 尺寸、间距和对齐没有明显问题。
 - Typography、颜色、边框、圆角和阴影合理。
 - 使用了正确素材且没有遗漏主要 UI。
-- 目标 Viewport 和关键页面状态已在浏览器中验证。
+- Figma 自然宽度、代表性的更窄和更宽移动 Viewport，以及关键页面状态已在浏览器中验证；至少包含一个非 Figma 宽度的 Viewport。
 - 没有明显 Overflow 或 Layout Shift。
 
 ### 工程质量
@@ -246,6 +285,11 @@ Layout
 - 优先复用了已有组件和 Design Token。
 - 没有复制已有公共组件或污染公共组件 API。
 - 没有大量 Absolute Position 或截图补丁。
+- 页面不存在从 Figma Frame 宽度机械生成的固定 `width` 或 `max-width`；允许的限宽均有产品、现有壳层或设计证据。
+- 内部布局使用可扩展的关系式约束，在非 Figma 宽度下能合理伸缩和换行。
+- 单色图标使用 React SVG 与 `currentColor`；多色、品牌和内容素材继续使用 `<img>` 并保留原色。
+- SVGO 没有删除 `stroke` 或 `stroke-width`，描边图标的线宽与几何未被破坏。
+- Vite 与 Vitest 存在独立配置时复用了同一份 SVGR/SVGO 配置。
 - TypeScript 类型正确且没有新增 Console Error。
 - `pnpm verify` 执行成功。
 
@@ -272,7 +316,8 @@ Layout
 - ...
 
 浏览器验证：
-- Viewport：
+- Figma 自然宽度 Viewport：
+- 额外移动 Viewport：
 - 页面状态：
 
 剩余视觉差异：
