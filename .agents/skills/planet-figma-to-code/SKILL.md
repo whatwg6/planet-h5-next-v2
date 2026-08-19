@@ -42,15 +42,14 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 始终按照以下顺序工作：
 
 ```text
-理解设计
+理解设计并完成结构、素材、布局、状态和 Token 分析
 → 理解代码库
-→ 盘点 UI 语义角色和已有实现
-→ 决定复用、扩展、下沉或保留
-→ 实现页面
-→ 组件化复查
-→ 浏览器渲染
-→ 视觉比较
-→ 调整细节
+→ 决定组件复用、扩展或新建
+→ 使用已获取的设计素材实现页面、状态和交互
+→ Playwright 构造目标状态并截图
+→ Vision 对比设计稿并迭代 3～5 次
+→ 最终视觉验证
+→ 保存验收后的 Browser Snapshot Baseline
 ```
 
 避免：
@@ -61,7 +60,7 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 → 堆积像素补丁
 ```
 
-## 1. 理解设计稿结构
+## 1. 理解设计稿并完成实现前分析
 
 写代码前，先加载 `figma-design-to-code`，再调用 `get_design_context`。
 
@@ -70,17 +69,18 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 - **信息层级**：识别页面主任务、阅读顺序、主要内容、辅助信息和主要操作。
 - **区域关系**：识别导航、内容、操作、反馈、弹层等区域，以及它们的包含、并列和覆盖关系。
 - **重复模式**：识别列表项、卡片、表单项、操作组等重复结构，判断真正的组件边界。
-- **布局规则**：区分固定与流式尺寸、滚动区域、吸顶区域、弹性空间和响应式约束。将 Figma Frame 宽度视为视觉验证 Viewport，不得直接推导为生产页面宽度上限。
-- **状态关系**：理解默认、选中、禁用、加载、空、错误、展开和弹层等状态之间的关系。
+- **布局规则**：先推理应使用 Document Flow、Flexbox、CSS Grid、固定定位还是其他布局策略；区分固定与流式尺寸、滚动区域、吸顶区域、弹性空间和响应式约束。将 Figma Frame 宽度视为视觉验证 Viewport，不得直接推导为生产页面宽度上限。
+- **状态与交互**：理解默认、选中、禁用、加载、空、错误、展开和弹层等状态之间的关系，以及触发、切换、导航和反馈流程。
 - **语义角色**：判断元素是按钮、链接、输入、标签、列表项、卡片还是纯装饰，不以外观代替语义。
 
-再从结构数据、素材和视觉参考三个方面读取设计：
+再从结构数据、素材、视觉参考和 Design Token 四个方面读取设计：
 
 - **结构数据**：检查页面层级、Auto Layout、Constraints、宽高、Padding、Gap、对齐、Typography、颜色、边框、圆角、阴影、Component、Variant 和 Variable。
-- **素材**：获取真实 SVG、图标、图片、Logo 和插画；不要要求用户提前手动导出。
+- **素材**：识别并获取真实 SVG、图标、图片、Logo、插画和字体信息或文件；不要要求用户提前手动导出。
 - **视觉**：获取 Figma Screenshot 作为最终参考，但不得只根据截图猜测页面结构和尺寸。
+- **Design Token**：将颜色、字体、字号、行高、间距、圆角、边框和阴影映射到项目现有 Token；只有现有 Token 无法表达且需求确实时才考虑扩展。
 
-开始实现前，先形成简短的结构结论，至少明确页面骨架、重复模式、组件候选、状态关系和响应式行为。结构无法解释时继续检查设计上下文，不要用 CSS 补丁掩盖理解缺失。
+开始实现前，先形成简短的分析结论，至少明确页面骨架、重复模式、组件及 Variant、状态与交互流程、响应式行为、布局策略、素材来源和 Token 映射。完成分析后再生成代码；结构无法解释时继续检查设计上下文，不要用 CSS 补丁掩盖理解缺失。
 
 ## 2. 理解代码库
 
@@ -271,9 +271,16 @@ rg -n '<(button|input|select|textarea)|role="(switch|tab|group)"|aria-pressed' s
 
 如果 Vite 与 Vitest 使用独立配置，必须抽取并复用同一份 SVGR/SVGO 配置。否则测试环境可能把 `?react` SVG 当成 URL 或 Data URI，而不是 React Component。
 
-## 6. 浏览器验证
+## 6. Playwright 与 Vision 验证
 
-实现完成后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中验证。不要改用手工截图，也不要为了截图额外编写 Playwright 测试文件。
+实现完成后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中构造目标状态、交互和截图。不要改用手工截图；迭代验证阶段不要只为截图额外编写 Playwright 测试文件，验收通过后建立 Snapshot Baseline 除外。
+
+工具职责不可混用：
+
+- **Playwright**：负责真实浏览器渲染、交互、状态构造和截图。
+- **Vision**：负责对比 Figma 设计稿与浏览器截图，识别差异并判断差异是否具有视觉意义。
+
+Figma 设计图是验收参考，不是长期 Playwright Baseline。Figma ↔ Browser 不使用严格 Pixel Equality 作为通过标准；长期视觉回归比较的是验收后的 Browser ↔ 后续 Browser。
 
 先确认 `npx` 可用，再使用 Playwright skill 提供的包装脚本：
 
@@ -306,7 +313,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 - Modal、Dropdown、Selected、Expanded 等状态正确。
 - Playwright Console 中没有新增错误。
 
-截取浏览器 Screenshot，与 Figma Screenshot 一起进行视觉判断。重点检查：
+截取浏览器 Screenshot，交给 Vision 与 Figma Screenshot 一起进行视觉判断。重点检查：
 
 1. 整体布局和页面层级。
 2. 元素尺寸、对齐和间距。
@@ -319,7 +326,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 
 ## 7. 视觉迭代
 
-最多执行三轮主要视觉调整。每轮只选择最重要的三个问题，按照以下顺序修复：
+使用 Vision 对比设计稿与本轮 Playwright 截图，根据主要差异修改实现并重新截图，完成 3～5 轮主要视觉迭代。每轮优先处理最有视觉意义的问题：
 
 ```text
 Layout
@@ -334,7 +341,15 @@ Layout
 
 如果 Vision 发现某个区域不正确，再使用 Figma 结构化尺寸、DOM Bounding Box、Computed Style 或浏览器测量结果精确确认。
 
-不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。三轮后仍有明显差异时，停止继续微调并报告剩余问题。
+不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。如果连续迭代后仍存在较大的结构性差异，回到设计结构、组件决策和布局策略分析，修正理解后重新实现和验证；不要继续堆叠 CSS 微调。
+
+主要迭代完成后，必须再次由 Playwright 构造目标状态并截图，再由 Vision 与设计稿做最终对比：
+
+- 存在有视觉意义的差异：继续修改，并重新执行最终截图与 Vision 验证。
+- 仅存在抗锯齿、阴影、SVG 栅格化、子像素等渲染噪声：可以忽略。
+- 仍存在结构性差异：回到设计、组件和布局分析阶段，不得判定通过。
+
+只有最终验证通过后，才将验收后的浏览器截图保存为 Playwright Snapshot Baseline，用于后续 Browser ↔ Browser 视觉回归。不得把 Figma Screenshot 复制或转换为 Baseline，也不得在设计验收前更新 Baseline 来消除失败。
 
 ## 8. 完成检查
 
@@ -347,6 +362,9 @@ Layout
 - Typography、颜色、边框、圆角和阴影合理。
 - 使用了正确素材且没有遗漏主要 UI。
 - Figma 自然宽度、代表性的更窄和更宽移动 Viewport，以及关键页面状态已在浏览器中验证；至少包含一个非 Figma 宽度的 Viewport。
+- 已完成 3～5 轮 Playwright 截图与 Vision 对比，并完成最终对比验证。
+- 已忽略的差异仅为无视觉意义的渲染噪声；不存在未解决的结构性差异。
+- Playwright Snapshot Baseline 来自最终验收后的浏览器截图，而不是 Figma 设计图。
 - 没有明显 Overflow 或 Layout Shift。
 
 ### 工程质量
@@ -400,6 +418,9 @@ Layout
 - Figma 自然宽度 Viewport：
 - 额外移动 Viewport：
 - 页面状态：
+- Vision 迭代轮次与主要修正：
+- 最终对比结论：
+- Playwright Snapshot Baseline：
 
 剩余视觉差异：
 - ...
