@@ -47,7 +47,7 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 → 决定组件复用、扩展或新建
 → 使用已获取的设计素材实现页面、状态和交互
 → Playwright 构造目标状态并截图
-→ Vision 对比设计稿并迭代 3～5 次
+→ Vision 对比设计稿并迭代至主要差异收敛
 → 最终视觉验证
 → 保存验收后的 Browser Snapshot Baseline
 ```
@@ -218,7 +218,7 @@ rg -n '<(button|input|select|textarea)|role="(switch|tab|group)"|aria-pressed' s
 - 页面根容器默认使用 `width: 100%` 或等价的流式布局。不得仅因为参考 Frame 为 393px 就写入 `width: 393px`、`max-width: 393px` 或对应的固定工具类。
 - 只有产品明确要求居中限宽、代码库已有壳层约束，或设计结构与多个 Viewport 的证据明确存在最大内容宽度时，才允许设置 `max-width`。使用前说明依据，不得从单个 Frame 宽度猜测。
 - 内部布局优先使用 `flex`、`grid`、`min-width: 0`、`gap`、`minmax()`、`clamp()` 等关系式约束。不要把某一 Frame 宽度下的子区域尺寸机械转写为固定 `width` 或 `max-width`。
-- 需要在 Figma 自然宽度保持特定几何时，使用可扩展的间距、弹性比例和尺寸边界表达关系；同时保证更宽或更窄的移动 Viewport 能合理伸缩、换行，且不产生横向 Overflow。
+- 需要在 Figma Frame 对应的 Viewport 保持特定几何时，使用可扩展的间距、弹性比例和尺寸边界表达关系；同时保证更宽或更窄的移动 Viewport 能合理伸缩、换行，且不产生横向 Overflow。
 
 ### 组件化复查
 
@@ -271,16 +271,14 @@ rg -n '<(button|input|select|textarea)|role="(switch|tab|group)"|aria-pressed' s
 
 如果 Vite 与 Vitest 使用独立配置，必须抽取并复用同一份 SVGR/SVGO 配置。否则测试环境可能把 `?react` SVG 当成 URL 或 Data URI，而不是 React Component。
 
-## 6. Playwright 与 Vision 验证
+## 6. 视觉迭代闭环
 
-实现完成后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中构造目标状态、交互和截图。不要改用手工截图；迭代验证阶段不要只为截图额外编写 Playwright 测试文件，验收通过后建立 Snapshot Baseline 除外。
+初版实现达到可验证状态后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中构造目标状态、交互和截图。迭代阶段不要改用手工截图，也不要为了截图编写临时 Playwright 测试文件。
 
 工具职责不可混用：
 
 - **Playwright**：负责真实浏览器渲染、交互、状态构造和截图。
 - **Vision**：负责对比 Figma 设计稿与浏览器截图，识别差异并判断差异是否具有视觉意义。
-
-Figma 设计图是验收参考，不是长期 Playwright Baseline。Figma ↔ Browser 不使用严格 Pixel Equality 作为通过标准；长期视觉回归比较的是验收后的 Browser ↔ 后续 Browser。
 
 先确认 `npx` 可用，再使用 Playwright skill 提供的包装脚本：
 
@@ -301,7 +299,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 6. 页面发生导航、弹层开关或明显 DOM 变化后重新 Snapshot。
 7. 页面稳定后使用 `"$PLANET_PWCLI" screenshot` 截图。
 
-先在 Figma Frame 对应的自然宽度检查视觉还原，再额外验证代表性的更窄和更宽移动 Viewport，重点检查流式伸缩、文案换行和横向 Overflow。例如参考 Frame 为 393px 时，430px 可以作为更宽 Viewport，但它不是固定要求；应根据目标设备范围选择验证宽度。
+先在 Figma Frame 对应的 Viewport 检查视觉还原，再额外验证代表性的更窄和更宽移动 Viewport，重点检查流式伸缩、文案换行和横向 Overflow。例如参考 Frame 为 393px 时，430px 可以作为更宽 Viewport，但它不是固定要求；应根据目标设备范围选择验证宽度。
 
 元素引用失效时重新 Snapshot，不得绕过引用直接猜测选择器。只有 Playwright CLI 的显式命令无法完成等待或状态准备时，才使用 `run-code`。
 
@@ -313,7 +311,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 - Modal、Dropdown、Selected、Expanded 等状态正确。
 - Playwright Console 中没有新增错误。
 
-截取浏览器 Screenshot，交给 Vision 与 Figma Screenshot 一起进行视觉判断。重点检查：
+完成一次目标状态截图后，使用 Vision 与 Figma Screenshot 对比，重点检查：
 
 1. 整体布局和页面层级。
 2. 元素尺寸、对齐和间距。
@@ -322,11 +320,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 5. 图标、图片和其他素材。
 6. Overflow、换行和响应式问题。
 
-不要把原始像素完全相等作为目标。字体抗锯齿、Subpixel Rendering、SVG 栅格化、阴影和渐变可能存在合理的渲染差异。
-
-## 7. 视觉迭代
-
-使用 Vision 对比设计稿与本轮 Playwright 截图，根据主要差异修改实现并重新截图，完成 3～5 轮主要视觉迭代。每轮优先处理最有视觉意义的问题：
+根据 Vision 识别的主要差异修改实现，然后重新用 Playwright 构造同一状态并截图。重复这一闭环直到不再存在有视觉意义的主要差异；3～5 轮是常见迭代区间，不是最低轮数、通过条件或硬性上限。每轮优先处理：
 
 ```text
 Layout
@@ -339,17 +333,23 @@ Layout
 → Minor Polish
 ```
 
-如果 Vision 发现某个区域不正确，再使用 Figma 结构化尺寸、DOM Bounding Box、Computed Style 或浏览器测量结果精确确认。
+如果 Vision 发现某个区域不正确，再使用 Figma 结构化尺寸、DOM Bounding Box、Computed Style 或浏览器测量结果确认原因，不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。
 
-不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。如果连续迭代后仍存在较大的结构性差异，回到设计结构、组件决策和布局策略分析，修正理解后重新实现和验证；不要继续堆叠 CSS 微调。
+一旦 Vision 和结构数据表明差异来自错误的页面层级、组件边界或布局模型，或连续微调未能缩小主要差异，立即结束当前微调循环并回到分析阶段；修正理解并重新实现后，再进入新的验证循环，不要继续堆叠 CSS 补丁。
 
-主要迭代完成后，必须再次由 Playwright 构造目标状态并截图，再由 Vision 与设计稿做最终对比：
+## 7. 最终验收与 Snapshot Baseline
 
-- 存在有视觉意义的差异：继续修改，并重新执行最终截图与 Vision 验证。
+完成主要迭代且不存在已知结构性差异后，必须再次由 Playwright 构造目标状态并截图，再由 Vision 与设计稿做独立的最终对比：
+
+- 存在有视觉意义的差异：回到第 6 节的迭代闭环，修改后重新进入最终验收。
 - 仅存在抗锯齿、阴影、SVG 栅格化、子像素等渲染噪声：可以忽略。
 - 仍存在结构性差异：回到设计、组件和布局分析阶段，不得判定通过。
 
-只有最终验证通过后，才将验收后的浏览器截图保存为 Playwright Snapshot Baseline，用于后续 Browser ↔ Browser 视觉回归。不得把 Figma Screenshot 复制或转换为 Baseline，也不得在设计验收前更新 Baseline 来消除失败。
+Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Baseline，也不使用严格 Pixel Equality 作为通过标准。
+
+只有最终 Vision 验收通过后，才为验收状态建立 Playwright 视觉回归用例：使用稳定步骤重建相同的 Browser、Viewport、数据和页面状态，并通过 `expect(page).toHaveScreenshot(...)` 记录对应 Playwright Project 的 Browser Snapshot Baseline。先更新 Snapshot，再正常运行同一用例确认 Browser ↔ Browser 比较通过。
+
+不得把 Figma Screenshot 复制或转换为 Baseline，不得手工把迭代期 CLI Screenshot 塞入 Snapshot 目录，也不得在设计验收前更新 Baseline 来消除失败。多个 Playwright Project 需要各自渲染和验收自己的 Baseline。
 
 ## 8. 完成检查
 
@@ -361,10 +361,10 @@ Layout
 - 尺寸、间距和对齐没有明显问题。
 - Typography、颜色、边框、圆角和阴影合理。
 - 使用了正确素材且没有遗漏主要 UI。
-- Figma 自然宽度、代表性的更窄和更宽移动 Viewport，以及关键页面状态已在浏览器中验证；至少包含一个非 Figma 宽度的 Viewport。
-- 已完成 3～5 轮 Playwright 截图与 Vision 对比，并完成最终对比验证。
-- 已忽略的差异仅为无视觉意义的渲染噪声；不存在未解决的结构性差异。
-- Playwright Snapshot Baseline 来自最终验收后的浏览器截图，而不是 Figma 设计图。
+- Figma Frame 对应的 Viewport、代表性的更窄和更宽移动 Viewport，以及关键页面状态已在浏览器中验证；至少包含一个非 Figma Frame 宽度的 Viewport。
+- Playwright 截图与 Figma 设计稿的 Vision 对比已收敛，并通过独立的最终验收；已忽略的差异仅为无视觉意义的渲染噪声。
+- 不存在未解决的结构性差异；若曾回到分析阶段，修正后的实现已重新走完视觉闭环。
+- Playwright 视觉回归用例可以稳定重建验收状态；Baseline 由验收后的 Browser 渲染生成，正常运行时 Browser ↔ Browser 比较通过。
 - 没有明显 Overflow 或 Layout Shift。
 
 ### 工程质量
@@ -415,7 +415,7 @@ Layout
 - ...
 
 浏览器验证：
-- Figma 自然宽度 Viewport：
+- Figma Frame 对应的 Viewport：
 - 额外移动 Viewport：
 - 页面状态：
 - Vision 迭代轮次与主要修正：
