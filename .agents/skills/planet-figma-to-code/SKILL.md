@@ -41,16 +41,26 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 
 始终按照以下顺序工作：
 
-```text
-理解设计
-→ 理解代码库
-→ 盘点 UI 语义角色和已有实现
-→ 决定复用、扩展、下沉或保留
-→ 实现页面
-→ 组件化复查
-→ 浏览器渲染
-→ 视觉比较
-→ 调整细节
+```mermaid
+flowchart TD
+  A["读取设计结构和视觉参考<br/>获取素材，形成布局、状态和响应式判断"]
+  B["理解代码库、现有组件<br/>Design Token 和工程规范"]
+  C["完成 Token 映射<br/>决定组件复用、扩展或新建"]
+  D["使用设计素材实现页面、状态和交互<br/>完成组件化复查"]
+  E["Playwright 构造目标状态并截图"]
+  F["Vision 对比 Figma 设计稿与浏览器截图"]
+  G{"差异类型"}
+  H["Playwright 再次构造目标状态并截图"]
+  I{"Vision 最终对比"}
+  J["建立并复跑 Playwright<br/>Browser Snapshot Baseline"]
+
+  A --> B --> C --> D --> E --> F --> G
+  G -- "局部且有视觉意义" --> D
+  G -- "结构性差异" --> A
+  G -- "无视觉意义的差异" --> H --> I
+  I -- "局部且有视觉意义" --> D
+  I -- "结构性差异" --> A
+  I -- "通过：无视觉意义的差异" --> J
 ```
 
 避免：
@@ -61,7 +71,7 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 → 堆积像素补丁
 ```
 
-## 1. 理解设计稿结构
+## 1. 理解设计稿并完成设计侧分析
 
 写代码前，先加载 `figma-design-to-code`，再调用 `get_design_context`。
 
@@ -70,133 +80,65 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 - **信息层级**：识别页面主任务、阅读顺序、主要内容、辅助信息和主要操作。
 - **区域关系**：识别导航、内容、操作、反馈、弹层等区域，以及它们的包含、并列和覆盖关系。
 - **重复模式**：识别列表项、卡片、表单项、操作组等重复结构，判断真正的组件边界。
-- **布局规则**：区分固定与流式尺寸、滚动区域、吸顶区域、弹性空间和响应式约束。将 Figma Frame 宽度视为视觉验证 Viewport，不得直接推导为生产页面宽度上限。
-- **状态关系**：理解默认、选中、禁用、加载、空、错误、展开和弹层等状态之间的关系。
+- **布局规则**：先推理应使用 Document Flow、Flexbox、CSS Grid、固定定位还是其他布局策略；区分固定与流式尺寸、滚动区域、吸顶区域、弹性空间和响应式约束。将 Figma Frame 宽度视为视觉验证 Viewport，不得直接推导为生产页面宽度上限。
+- **状态与交互**：理解默认、选中、禁用、加载、空、错误、展开和弹层等状态之间的关系，以及触发、切换、导航和反馈流程。
 - **语义角色**：判断元素是按钮、链接、输入、标签、列表项、卡片还是纯装饰，不以外观代替语义。
 
-再从结构数据、素材和视觉参考三个方面读取设计：
+再从结构数据、素材、视觉参考和 Design Token 四个方面读取设计：
 
 - **结构数据**：检查页面层级、Auto Layout、Constraints、宽高、Padding、Gap、对齐、Typography、颜色、边框、圆角、阴影、Component、Variant 和 Variable。
-- **素材**：获取真实 SVG、图标、图片、Logo 和插画；不要要求用户提前手动导出。
+- **素材**：识别并获取真实 SVG、图标、图片、Logo、插画和字体信息或文件；不要要求用户提前手动导出。
 - **视觉**：获取 Figma Screenshot 作为最终参考，但不得只根据截图猜测页面结构和尺寸。
+- **Design Token**：提取颜色、字体、字号、行高、间距、圆角、边框和阴影的设计值与语义，待理解代码库后再完成项目 Token 映射。
 
-开始实现前，先形成简短的结构结论，至少明确页面骨架、重复模式、组件候选、状态关系和响应式行为。结构无法解释时继续检查设计上下文，不要用 CSS 补丁掩盖理解缺失。
+先形成简短的设计侧结论，至少明确页面骨架、重复模式、组件及 Variant、状态与交互流程、响应式行为、布局策略、素材来源和待映射的 Token。结构无法解释时继续检查设计上下文，不要用 CSS 补丁掩盖理解缺失。
 
 ## 2. 理解代码库
 
 修改代码前，检查：
 
-- 项目架构与开发规范。
-- 目标 Feature 和 Route。
-- `src/shared/ui`。
-- `src/shared/styles/tokens.css`。
+- `AGENTS.md` 及任务直接相关的开发指南和配置。
+- `src/shared/ui` 的现有组件和公开 API。
+- `src/shared/styles/tokens.css` 的现有 Design Token。
 - 现有布局组件、图标和素材。
-- 相似页面或组件。
 - 项目的样式和响应式约定。
 
-优先复用现有组件和 Token。不要只根据外观判断能否复用，还要确认组件的语义、职责、交互模型和 API 是否匹配。
-
-不得只检查 `src/shared/ui`。实现前还必须搜索其他 Feature 中的内联 UI 实现，特别是：
-
-- `<button>`、`<input>`、`<select>`、`<textarea>`。
-- `role="switch"`、`role="tab"`、`aria-pressed` 等自定义控件。
-- 导航栏、搜索框、分段选择器、表单项、列表行、卡片和操作组。
-
-可使用以下搜索作为入口：
-
-```bash
-rg -n '<(button|input|select|textarea)|role="(switch|tab|group)"|aria-pressed' src
-```
-
-某个能力尚未进入 `shared/ui` 不等于代码库中不存在可复用模式。
-
-搜索结果必须导致明确的代码动作，不得只在报告中列出候选组件：
-
-```text
-已有 shared/ui 且语义一致
-→ 直接复用
-
-其他 Feature 存在语义和交互一致的内联实现
-→ 抽取到 shared/ui
-→ 同时改造目标页面和已有的直接重复调用点
-
-当前需求用到标准基础控件，但 shared/ui 不存在
-→ 先创建基础组件
-→ 再用它组合业务组件或页面
-
-外观相似但语义、行为或业务职责不同
-→ 保留在所属 Feature
-```
-
-上述改造只覆盖与当前组件直接重复的调用点。如果会引发 Breaking API Change、大范围 Design System 迁移或无法确定交互契约，停止扩大范围并上报。
+将第 1 节提取的设计值和语义映射到项目现有 Token。只有现有 Token 无法表达且需求确实时才考虑扩展。Token 映射和第 3 节的组件决策完成后再生成代码。
 
 ## 3. 决定组件方案
 
-始终先判断语义和交互，再判断视觉。视觉相似不等于可以复用，视觉不同也不等于必须新建组件。
+先判断语义、交互和归属，再判断视觉。稳定的通用语义、交互契约和实际复用证据共同决定是否进入 `shared/ui`；外观相似、Figma Component 身份或出现次数都不能单独决定归属。
 
-开始写页面代码前，先产出简短的组件决策表：
+只对复用、扩展、新建或归属存在实际选择的候选项记录简短决策；显然可直接复用的组件无需为表格而表格。
 
-| 设计区域 | 语义角色 | 代码库现状               | 决策                      | 归属                  |
-| -------- | -------- | ------------------------ | ------------------------- | --------------------- |
-| ...      | ...      | 已有 / 内联重复 / 不存在 | 复用 / 扩展 / 新建 / 保留 | `shared/ui` / Feature |
+| 设计区域 | 语义与交互 | 代码库证据               | 决策与归属                     | 理由 |
+| -------- | ---------- | ------------------------ | -------------------------------- | ---- |
+| ...      | ...        | 已有 / 内联重复 / 不存在 | 复用 / 扩展 / 新建 / 保留；归属 | ...  |
 
-如果决定继续在页面或 Feature 中直接实现一个无业务语义的控件，必须说明它为什么不进入 `shared/ui`。
+按照以下边界决定归属：
 
-### 抽取门槛
+- **已有组件**：语义、职责和交互契约一致时直接复用；只有受支持的视觉或组合差异时，通过 Token、Size、Variant、Slot 或 Composition 做向后兼容的扩展。
+- **共享基础控件**：当前需求真实，职责不含业务概念，API 及焦点、禁用、加载、键盘和无障碍契约足够稳定时，可以在首次真实使用时进入 `shared/ui`；首次使用或第二次出现本身都不是抽取理由。
+- **共享组合组件**：只有在语义和交互契约稳定，且有跨页面复用、可直接消除的重复实现或其他代码库证据时，才进入或扩展 `shared/ui`。Figma Component、Instance 和 Variant 只是辅助证据。
+- **Feature 组件**：包含业务字段、领域术语、权限、流程或数据解释规则，或者通用 API 仍不稳定时，保留在所属 Feature。
 
-**原生控件基础能力**，例如 Button、IconButton、Input、Textarea、Select、Checkbox、Radio 和 Switch：
-
-- 当前页面已有真实需求，且 API 可以不带业务概念地表达时，可在第一次使用时进入 `shared/ui`，不要为了等待第二个页面而重复内联焦点、禁用、加载、键盘和无障碍行为。
-- 业务搜索、表单提交等行为由 Feature 组件组合基础控件实现。
-
-**通用组合组件**，例如 NavBar、SearchBar、SegmentedControl、ListGroup、ListItem 和 EmptyState，满足以下任一条件时应进入或扩展 `shared/ui`：
-
-- 在两个独立页面或 Feature 中出现相同语义和交互。
-- Figma 明确将其定义为可复用 Component，并有实例或 Variant 证据。
-- 代码库中已有一个内联实现，目标页面再次出现相同模式。
-
-**业务组件**包含业务字段、领域术语、权限、流程或数据解释规则，继续归所属 Feature。不得仅因外观相似就下沉。
-
-对每个组件候选依次判断：
+对候选项依次检查：
 
 1. 它解决什么用户问题，承担什么语义角色？
 2. 它有哪些交互、状态和可访问性要求？
-3. 现有组件的语义、职责和交互模型是否一致？
-4. 现有 API 能否自然表达需求，而不需要加入页面专属或业务专属 Props？
-5. 如果只有视觉差异，是否可以通过 Token、Size、Variant、Slot 或 Composition 表达？
-
-按照以下规则决策：
-
-```text
-语义和交互一致，视觉一致 → 直接复用
-语义和交互一致，视觉不同 → Token、Size 或 Variant
-语义一致，需要组合结构 → Slot、Composition 或 Wrapper
-语义或职责不同 → 新组件
-只有外观相似，语义不同 → 不复用
-```
-
-处理具体差异时使用：
-
-```text
-视觉变化 → Token 或 Variant
-尺寸变化 → Size
-结构变化 → Slot 或 Composition
-行为扩展 → Wrapper 或专用组件
-语义变化 → 新组件
-```
+3. 现有组件的语义、职责和交互契约是否匹配？
+4. 差异能否通过现有 API 或通用扩展自然表达，而不引入页面、业务专属 Props？
+5. 共享归属的语义、契约和 API 是否已有足够证据且稳定？
 
 修改公共组件前：
 
-1. 阅读当前实现。
-2. 搜索主要调用位置。
-3. 检查它已有的语义、状态、交互和可访问性行为。
-4. 判断现有 API 是否已经支持需求。
-5. 优先使用向后兼容的扩展。
-6. 不得为单个页面加入业务特例。
+1. 阅读当前实现并搜索主要调用点。
+2. 保留已有语义、状态、交互和可访问性契约。
+3. 优先最小、向后兼容的通用扩展，不得加入单页面或业务特例。
 
 不要因为 Figma 实例名称不同就重复创建组件，也不要因为现有组件“看起来接近”就强行复用。
 
-如果需要 Breaking API Change、大范围修改 Design System、重构共享组件架构或大范围修改全局 Token，停止扩大任务并将问题交回上层 Agent 决策。
+如果需要 Breaking API Change、大范围修改 Design System、重构共享组件架构或大范围修改全局 Token，停止扩大任务并报告需要决策的问题。
 
 ## 4. 实现页面
 
@@ -218,7 +160,7 @@ rg -n '<(button|input|select|textarea)|role="(switch|tab|group)"|aria-pressed' s
 - 页面根容器默认使用 `width: 100%` 或等价的流式布局。不得仅因为参考 Frame 为 393px 就写入 `width: 393px`、`max-width: 393px` 或对应的固定工具类。
 - 只有产品明确要求居中限宽、代码库已有壳层约束，或设计结构与多个 Viewport 的证据明确存在最大内容宽度时，才允许设置 `max-width`。使用前说明依据，不得从单个 Frame 宽度猜测。
 - 内部布局优先使用 `flex`、`grid`、`min-width: 0`、`gap`、`minmax()`、`clamp()` 等关系式约束。不要把某一 Frame 宽度下的子区域尺寸机械转写为固定 `width` 或 `max-width`。
-- 需要在 Figma 自然宽度保持特定几何时，使用可扩展的间距、弹性比例和尺寸边界表达关系；同时保证更宽或更窄的移动 Viewport 能合理伸缩、换行，且不产生横向 Overflow。
+- 需要在 Figma Frame 对应的 Viewport 保持特定几何时，使用可扩展的间距、弹性比例和尺寸边界表达关系；同时保证更宽或更窄的移动 Viewport 能合理伸缩、换行，且不产生横向 Overflow。
 
 ### 组件化复查
 
@@ -271,9 +213,14 @@ rg -n '<(button|input|select|textarea)|role="(switch|tab|group)"|aria-pressed' s
 
 如果 Vite 与 Vitest 使用独立配置，必须抽取并复用同一份 SVGR/SVGO 配置。否则测试环境可能把 `?react` SVG 当成 URL 或 Data URI，而不是 React Component。
 
-## 6. 浏览器验证
+## 6. 视觉迭代闭环
 
-实现完成后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中验证。不要改用手工截图，也不要为了截图额外编写 Playwright 测试文件。
+初版实现达到可验证状态后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中构造目标状态、交互和截图。迭代阶段不要改用手工截图，也不要为了截图编写临时 Playwright 测试文件。
+
+工具职责不可混用：
+
+- **Playwright**：负责真实浏览器渲染、交互、状态构造和截图。
+- **Vision**：负责对比 Figma 设计稿与浏览器截图，识别差异并判断差异是否具有视觉意义。
 
 先确认 `npx` 可用，再使用 Playwright skill 提供的包装脚本：
 
@@ -294,7 +241,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 6. 页面发生导航、弹层开关或明显 DOM 变化后重新 Snapshot。
 7. 页面稳定后使用 `"$PLANET_PWCLI" screenshot` 截图。
 
-先在 Figma Frame 对应的自然宽度检查视觉还原，再额外验证代表性的更窄和更宽移动 Viewport，重点检查流式伸缩、文案换行和横向 Overflow。例如参考 Frame 为 393px 时，430px 可以作为更宽 Viewport，但它不是固定要求；应根据目标设备范围选择验证宽度。
+先在 Figma Frame 对应的 Viewport 检查视觉还原，再额外验证代表性的更窄和更宽移动 Viewport，重点检查流式伸缩、文案换行和横向 Overflow。例如参考 Frame 为 393px 时，430px 可以作为更宽 Viewport，但它不是固定要求；应根据目标设备范围选择验证宽度。
 
 元素引用失效时重新 Snapshot，不得绕过引用直接猜测选择器。只有 Playwright CLI 的显式命令无法完成等待或状态准备时，才使用 `run-code`。
 
@@ -306,7 +253,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 - Modal、Dropdown、Selected、Expanded 等状态正确。
 - Playwright Console 中没有新增错误。
 
-截取浏览器 Screenshot，与 Figma Screenshot 一起进行视觉判断。重点检查：
+完成一次目标状态截图后，使用 Vision 与 Figma Screenshot 对比，重点检查：
 
 1. 整体布局和页面层级。
 2. 元素尺寸、对齐和间距。
@@ -315,11 +262,7 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 5. 图标、图片和其他素材。
 6. Overflow、换行和响应式问题。
 
-不要把原始像素完全相等作为目标。字体抗锯齿、Subpixel Rendering、SVG 栅格化、阴影和渐变可能存在合理的渲染差异。
-
-## 7. 视觉迭代
-
-最多执行三轮主要视觉调整。每轮只选择最重要的三个问题，按照以下顺序修复：
+根据 Vision 识别的主要差异修改实现，然后重新用 Playwright 构造同一状态并截图。重复这一闭环直到不再存在有视觉意义的主要差异；3～5 轮是常见迭代区间，不是最低轮数、通过条件或硬性上限。每轮优先处理：
 
 ```text
 Layout
@@ -332,9 +275,23 @@ Layout
 → Minor Polish
 ```
 
-如果 Vision 发现某个区域不正确，再使用 Figma 结构化尺寸、DOM Bounding Box、Computed Style 或浏览器测量结果精确确认。
+如果 Vision 发现某个区域不正确，再使用 Figma 结构化尺寸、DOM Bounding Box、Computed Style 或浏览器测量结果确认原因，不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。
 
-不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。三轮后仍有明显差异时，停止继续微调并报告剩余问题。
+一旦 Vision 和结构数据表明差异来自错误的页面层级、组件边界或布局模型，或连续微调未能缩小主要差异，立即结束当前微调循环并回到分析阶段；修正理解并重新实现后，再进入新的验证循环，不要继续堆叠 CSS 补丁。
+
+## 7. 最终验收与 Snapshot Baseline
+
+完成主要迭代且不存在已知结构性差异后，必须再次由 Playwright 构造目标状态并截图，再由 Vision 与设计稿做独立的最终对比：
+
+- 存在有视觉意义的差异：回到第 6 节的迭代闭环，修改后重新进入最终验收。
+- 仅存在抗锯齿、阴影、SVG 栅格化、子像素等渲染噪声：可以忽略。
+- 仍存在结构性差异：回到设计、组件和布局分析阶段，不得判定通过。
+
+Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Baseline，也不使用严格 Pixel Equality 作为通过标准。
+
+只有最终 Vision 验收通过后，才为验收状态建立 Playwright 视觉回归用例：使用稳定步骤重建相同的 Browser、Viewport、数据和页面状态，并通过 `expect(page).toHaveScreenshot(...)` 记录对应 Playwright Project 的 Browser Snapshot Baseline。先更新 Snapshot，再正常运行同一用例确认 Browser ↔ Browser 比较通过。
+
+不得把 Figma Screenshot 复制或转换为 Baseline，不得手工把迭代期 CLI Screenshot 塞入 Snapshot 目录，也不得在设计验收前更新 Baseline 来消除失败。多个 Playwright Project 需要各自渲染和验收自己的 Baseline。
 
 ## 8. 完成检查
 
@@ -346,7 +303,10 @@ Layout
 - 尺寸、间距和对齐没有明显问题。
 - Typography、颜色、边框、圆角和阴影合理。
 - 使用了正确素材且没有遗漏主要 UI。
-- Figma 自然宽度、代表性的更窄和更宽移动 Viewport，以及关键页面状态已在浏览器中验证；至少包含一个非 Figma 宽度的 Viewport。
+- Figma Frame 对应的 Viewport、代表性的更窄和更宽移动 Viewport，以及关键页面状态已在浏览器中验证；至少包含一个非 Figma Frame 宽度的 Viewport。
+- Playwright 截图与 Figma 设计稿的 Vision 对比已收敛，并通过独立的最终验收；已忽略的差异仅为无视觉意义的渲染噪声。
+- 不存在未解决的结构性差异；若曾回到分析阶段，修正后的实现已重新走完视觉闭环。
+- Playwright 视觉回归用例可以稳定重建验收状态；Baseline 由验收后的 Browser 渲染生成，正常运行时 Browser ↔ Browser 比较通过。
 - 没有明显 Overflow 或 Layout Shift。
 
 ### 工程质量
@@ -397,9 +357,12 @@ Layout
 - ...
 
 浏览器验证：
-- Figma 自然宽度 Viewport：
+- Figma Frame 对应的 Viewport：
 - 额外移动 Viewport：
 - 页面状态：
+- Vision 迭代轮次与主要修正：
+- 最终对比结论：
+- Playwright Snapshot Baseline：
 
 剩余视觉差异：
 - ...
