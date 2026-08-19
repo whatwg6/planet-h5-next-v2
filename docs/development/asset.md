@@ -37,6 +37,11 @@ import { AddIcon } from "@/shared/assets/icons";
 ```
 
 - 单色图标使用 `currentColor` 控制 `fill` 或 `stroke`。
+- 单色 UI 图标使用 `?react` 导入为 React 组件，由组件调用处的 `color` 控制颜色；SVGR
+  会把非 `none` 的 `fill` 和 `stroke` 转为 `currentColor`，但保留描边类型和
+  `stroke-width`，避免破坏图标几何。
+- 多色 SVG、Logo、品牌图形和插画不得使用 `?react` 的单色转换流程，应作为 URL 交给
+  `<img>` 使用并保留原始颜色。
 - 保留 `viewBox`，保证尺寸可由 CSS 控制。
 - 多色插画和品牌 SVG 不强制改色，按 URL 使用。
 - 不配置构建工具无差别删除全部 `fill` 或 `stroke`。
