@@ -1,0 +1,1 @@
+export { customerListRoute } from "./customerListRoute";

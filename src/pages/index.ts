@@ -1,4 +1,5 @@
 import type { RouteObject } from "react-router-dom";
-import { homeRoute, notFoundRoute, offlineRoute } from "./system";
+import { customerListRoute } from "./customers";
+import { notFoundRoute, offlineRoute } from "./system";
 
-export const routes: RouteObject[] = [homeRoute, offlineRoute, notFoundRoute];
+export const routes: RouteObject[] = [customerListRoute, offlineRoute, notFoundRoute];

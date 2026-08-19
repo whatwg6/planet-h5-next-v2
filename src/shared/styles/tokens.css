@@ -7,6 +7,16 @@
   --color-text-muted: #687188;
   --color-danger: #d92d20;
   --color-border: #dfe3ec;
+  --color-background-base: #141414;
+  --color-background-component: #2c2d2e;
+  --color-background-container: #222324;
+  --color-content-primary: #f5f5f5;
+  --color-content-secondary: rgb(245 245 245 / 70%);
+  --color-content-tertiary: rgb(245 245 245 / 40%);
+  --color-content-disabled: rgb(245 245 245 / 20%);
+  --color-brand-foreground: #a7cd45;
+  --color-brand-transparent: rgb(167 205 69 / 10%);
+  --color-container-border: rgb(255 255 255 / 2%);
   --radius-control: 0.75rem;
   --radius-card: 1rem;
   --shadow-card: 0 0.5rem 1.5rem rgb(23 32 51 / 8%);
