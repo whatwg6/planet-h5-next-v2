@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { EmptySearchIcon } from "@/shared/assets/icons/customer";
 import { CustomerCard } from "../components/CustomerCard";
 import { CustomerSearchField } from "../components/CustomerSearchField";
@@ -14,6 +15,7 @@ const customers = [
 ];
 
 export function CustomerListView() {
+  const navigate = useNavigate();
   const [active, setActive] = useState(false);
   const [query, setQuery] = useState("");
   const [settledQuery, setSettledQuery] = useState("");
@@ -69,7 +71,11 @@ export function CustomerListView() {
       ) : (
         <section aria-label="客户列表" className="flex flex-col gap-3 px-3 pb-5 pt-2">
           {results.map((customer) => (
-            <CustomerCard key={customer.name} {...customer} />
+            <CustomerCard
+              key={customer.name}
+              {...customer}
+              onClick={() => navigate("/meal-plans")}
+            />
           ))}
         </section>
       )}

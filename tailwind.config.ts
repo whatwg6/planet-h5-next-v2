@@ -23,6 +23,7 @@ export default {
         "brand-foreground": "var(--color-brand-foreground)",
         "brand-transparent": "var(--color-brand-transparent)",
         "container-border": "var(--color-container-border)",
+        divider: "var(--color-divider)",
       },
       borderRadius: { control: "var(--radius-control)", card: "var(--radius-card)" },
       boxShadow: { card: "var(--shadow-card)" },
