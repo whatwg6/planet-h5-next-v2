@@ -3,13 +3,15 @@ import { ChevronRightIcon, CustomerIcon } from "@/shared/assets/icons/customer";
 interface CustomerCardProps {
   isTest?: boolean;
   name: string;
+  onClick?: () => void;
 }
 
-export function CustomerCard({ isTest = false, name }: CustomerCardProps) {
+export function CustomerCard({ isTest = false, name, onClick }: CustomerCardProps) {
   return (
     <button
       aria-label={`查看客户：${name}`}
       className="flex min-h-14 w-full items-start justify-between gap-6 rounded-xl border border-container-border bg-background-container p-4 text-left"
+      onClick={onClick}
       type="button"
     >
       <span className="flex min-w-0 flex-1 items-start gap-2">
