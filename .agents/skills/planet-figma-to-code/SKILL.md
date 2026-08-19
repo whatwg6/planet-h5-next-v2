@@ -1,6 +1,6 @@
 ---
 name: planet-figma-to-code
-description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 页面或组件，重点关注组件复用、Design Token、真实素材和 Playwright 浏览器视觉验证。仅当用户明确调用 $planet-figma-to-code 时使用。
+description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 页面或组件，重点关注组件复用、Design Token、真实素材，以及先进行 3–5 轮 Vision 自我迭代、再以临时 Pixel Diff 终审的浏览器验证。仅当用户明确调用 $planet-figma-to-code 时使用。
 ---
 
 # Planet Figma 设计还原
@@ -16,7 +16,7 @@ description: 将 Figma 设计高质量还原为 Planet H5 中可维护的 React 
 - 正确使用 Design Token。
 - 使用真实 Figma 素材。
 - 保持代码可维护、可扩展。
-- 通过真实浏览器验证并迭代视觉效果。
+- 通过真实浏览器截图先完成 3–5 轮 Vision 自我迭代，再用临时 Pixel Diff 和 Vision 三图复核做末端审计。
 
 只负责 UI 实现和视觉还原，不负责：
 
@@ -51,23 +51,27 @@ flowchart TD
   P["页面：打开应用路由"]
   S["组件：打开稳定 Storybook Story"]
   E["Playwright CLI 构造目标状态并截图"]
-  F["Vision 对比 Figma 设计稿与浏览器截图"]
+  F["Vision 直接对比<br/>Figma 设计稿与浏览器截图"]
+  T{"Vision 轮次与结论"}
+  H["生成 Figma PNG ↔ Browser PNG<br/>临时 Pixel Diff"]
+  I["Vision 复核三张图<br/>判断噪声或真实问题"]
   G{"差异类型"}
-  Q{"用户明确要求新视觉回归<br/>或既有相关快照被预期变更影响？"}
-  J["在 CI 对齐环境中建立并复跑<br/>Browser Snapshot Baseline"]
-  K["报告 CLI + Vision 验收结果"]
+  K["报告截图、Pixel Diff<br/>与 Vision 验收结果"]
   X["记录证据、剩余差异和阻塞条件<br/>停止无效迭代并上报"]
 
   R --> A --> C --> D --> V
   V -- "页面" --> P --> E
   V -- "独立组件" --> S --> E
-  E --> F --> G
-  G -- "局部且有视觉意义" --> D
-  G -- "结构性差异" --> A
-  G -- "通过或仅有渲染噪声" --> Q
+  E --> F --> T
+  T -- "有问题且未到第 5 轮" --> D
+  T -- "无问题但不足 3 轮" --> E
+  T -- "无问题且已完成 3–5 轮" --> H --> I --> G
+  T -- "第 5 轮发现可修问题<br/>修后新闭环重置为 1" --> D
+  T -- "连续无改善或阻塞" --> X
+  G -- "局部真实问题<br/>修改后轮次重置为 1" --> D
+  G -- "结构性问题<br/>重做后轮次重置为 1" --> A
+  G -- "通过或仅有渲染噪声" --> K
   G -- "连续无改善或超出范围" --> X
-  Q -- "是" --> J --> K
-  Q -- "否" --> K
 ```
 
 避免：
@@ -233,12 +237,13 @@ flowchart TD
 
 ## 6. 浏览器视觉迭代闭环
 
-初版实现达到可验证状态后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中构造目标状态、交互和截图。CLI + Vision 验收是本 skill 的默认验证方式；迭代阶段不要改用手工截图，也不要为了截图编写临时 Playwright 测试文件。
+初版实现达到可验证状态后，加载 `playwright` skill，并使用 Playwright CLI 在真实浏览器中构造目标状态、交互和截图。每个有匹配 Figma Screenshot 的目标状态都先完成 3–5 轮“Figma ↔ Browser”Vision 直接对比；只有当前 Vision 轮次确认没有可修问题后，才生成临时 Pixel Diff 并做三图复核。迭代阶段不要改用手工截图，也不要为了截图编写 Playwright 测试文件。
 
 工具职责不可混用：
 
 - **Playwright CLI**：负责真实浏览器渲染、交互、状态构造和截图。
-- **Vision**：负责对比 Figma 设计稿与浏览器截图，识别差异并判断差异是否具有视觉意义。
+- **Pixel Diff 脚本**：只在 3–5 轮 Vision 直接对比收敛后，逐像素计算同尺寸 Figma PNG 与 Browser PNG 的绝对颜色差并生成临时差异图；只负责暴露差异，不负责判定通过。
+- **Vision**：先在不依赖 Pixel Diff 的阶段自我迭代 3–5 轮，再结合 Pixel Diff 复核三图，判断剩余差异是渲染噪声、局部真实问题还是结构性问题。
 
 ### 选择稳定验证宿主
 
@@ -255,19 +260,23 @@ command -v npx >/dev/null 2>&1
 export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playwright_cli.sh"
 ```
 
-创建 `output/playwright/<任务名称>/`，并将其作为以下 Playwright CLI 命令的工作目录，使裸 `snapshot`、`screenshot` 和其他临时产物都留在该目录；不要新增其他顶层产物目录。
+创建 `output/playwright/<任务名称>/`，并将其作为以下 Playwright CLI 命令的工作目录，使 Figma 参考图、Browser Screenshot、Pixel Diff、`snapshot` 和其他临时产物都留在该目录；不要新增其他顶层产物目录。
+
+在第一次浏览器截图前，为同一个 Figma node 调用 `get_screenshot` 获取可下载的 1x PNG；该调用只用于验证，不能替代已经完成的 `get_design_context`。检查返回的 `width`、`height`、`original_width` 和 `original_height`：如果截图被 `maxDimension` 缩小，且自然尺寸未超过单边 `8192px`、总计 `8,000,000` 像素的安全上限，使用足以覆盖原始长边的 `maxDimension` 重新获取。将自然尺寸的参考图按文件系统安全的稳定状态名下载到任务目录，例如 `figma-reference-<目标状态>.png`；每个目标状态使用独立参考图，后续轮次复用但不修改它。超出安全上限时，改用有明确对应关系的较小 Figma node、Viewport 或语义区域分别验证；不得缩小整图来绕过限制。无法拆分为匹配目标时报告资源阻塞。
+
+Browser Context 的 `deviceScaleFactor` 保持为 `1`，使 CSS Viewport 像素与输出 PNG 像素一一对应；若当前会话不是 `1`，通过任务目录中的 Playwright CLI 配置重开会话。不得通过图片缩放补偿 DPR 或导出倍率不一致。
 
 按照以下顺序操作：
 
 1. 从仓库根目录启动应用或 Storybook，并确认目标绝对 URL。
 2. 从任务产物目录使用 `"$PLANET_PWCLI" open <URL> --headed` 打开目标。
 3. 使用 `"$PLANET_PWCLI" resize <width> <height>` 设置为 Figma Frame 对应的 Viewport。
-4. 使用 `"$PLANET_PWCLI" snapshot` 获取当前结构和稳定元素引用。
+4. 使用 `"$PLANET_PWCLI" snapshot` 获取 DOM / 可访问性结构和稳定元素引用；它不是视觉 Snapshot Baseline。
 5. 使用最新 Snapshot 中的引用执行 Click、Fill、Hover 或 Press，进入设计对应状态。
 6. 发生导航、弹层开关或明显 DOM 变化后重新 Snapshot。
-7. 页面稳定后使用 `"$PLANET_PWCLI" screenshot` 截图。
+7. 页面目标稳定后使用 `"$PLANET_PWCLI" screenshot` 截取 Viewport；独立组件目标则从最新 Snapshot 找到组件根引用，使用 `"$PLANET_PWCLI" screenshot eX` 只截组件边界，不得截取整个 Storybook 页面。记录 CLI 返回的实际 PNG 路径。
 
-先在 Figma Frame 对应的 Viewport 检查视觉还原，再额外验证代表性的更窄和更宽移动 Viewport，重点检查流式伸缩、文案换行和横向 Overflow。例如参考 Frame 为 393px 时，430px 可以作为更宽 Viewport，但它不是固定要求；应根据目标设备范围选择验证宽度。
+先在 Figma Frame 对应的 Viewport 检查视觉还原，再额外验证代表性的更窄和更宽移动 Viewport，重点检查流式伸缩、文案换行和横向 Overflow。例如参考 Frame 为 393px 时，430px 可以作为更宽 Viewport，但它不是固定要求；应根据目标设备范围选择验证宽度。只有存在同一状态、同一画布尺寸的 Figma Screenshot 时才执行 Pixel Diff；额外响应式 Viewport 没有对应设计稿时只做浏览器检查，不得拉伸或缩放其他 Figma Screenshot 制造对比参考。
 
 元素引用失效时重新 Snapshot，不得绕过引用直接猜测选择器。只有 Playwright CLI 的显式命令无法完成等待或状态准备时，才使用 `run-code`。
 
@@ -279,16 +288,28 @@ export PLANET_PWCLI="${CODEX_HOME:-$HOME/.codex}/skills/playwright/scripts/playw
 - Modal、Dropdown、Selected、Expanded 等状态正确。
 - Playwright Console 中没有新增错误。
 
-完成一次目标状态截图后，使用 Vision 与 Figma Screenshot 对比，重点检查：
+### 阶段 A：Vision 自我迭代 3–5 轮
 
-1. 整体布局和页面层级。
-2. 元素尺寸、对齐和间距。
-3. Typography 和颜色。
-4. Border、Radius 和 Shadow。
-5. 图标、图片和其他素材。
-6. Overflow、换行和响应式问题。
+对每个有匹配 Figma Screenshot 的目标状态，将 Vision 轮次从 `1` 开始独立计数。Pixel Diff 在此阶段禁止生成或提供给 Vision，避免差异热图过早主导实现判断。
 
-根据主要差异修改实现，然后重新构造同一状态并截图。每轮优先处理：
+每一轮都必须：
+
+1. 使用 Playwright CLI 重新构造同一目标状态并生成新的 Browser Screenshot。
+2. 只把稳定的 Figma Screenshot 和本轮 Browser Screenshot 交给 Vision 直接对比。
+3. 要求 Vision 基于可见证据检查整体布局和页面层级、尺寸与间距、对齐、Typography、颜色、Border、Radius、Shadow、素材、状态、Overflow 和换行。
+4. 第 1–4 轮 Vision 发现可修问题时，先使用 Figma 结构数据、DOM Bounding Box、Computed Style 或浏览器测量结果确认原因，再修改实现并进入下一轮；不要让 Vision 猜测精确 CSS 数值。
+5. Vision 未发现可修问题但尚未完成第 3 轮时，仍需重新构造状态、截图并执行下一轮独立复核，不得提前进入 Pixel Diff。
+
+至少完成 3 轮，最多完成 5 轮：
+
+- 第 1 轮重点检查结构、状态、素材完整性和主要布局。
+- 第 2 轮重点检查尺寸、间距、对齐、Typography 和组件细节。
+- 第 3 轮重新做完整复核；本轮没有可修问题时，才进入阶段 B。
+- 第 3 轮仍有问题时，修正后执行第 4 轮；第 4 轮仍有问题时，修正后执行第 5 轮。
+- 第 4 或第 5 轮确认没有可修问题时，可以进入阶段 B。
+- 第 5 轮发现当前范围内可修的问题时，不得生成 Pixel Diff；修正后开启新的闭环并将 Vision 轮次重置为 `1`。若该问题已连续修改两次仍无改善、根因修正仍失败或依赖外部条件，则按“停止无效迭代”报告阻塞。
+
+每轮优先处理：
 
 ```text
 Layout
@@ -301,42 +322,66 @@ Layout
 → Minor Polish
 ```
 
-如果 Vision 发现某个区域不正确，使用 Figma 结构化尺寸、DOM Bounding Box、Computed Style 或浏览器测量结果确认原因；不要依赖 Vision 猜测精确像素，也不需要建立完整的 Figma Node 与 DOM Node 映射。
+### 阶段 B：Pixel Diff 末端审计
+
+只有阶段 A 已完成 3–5 轮，且最后一轮 Vision 明确没有可修问题时，才对稳定 Figma Screenshot 和最后一轮 Browser Screenshot 生成 Pixel Diff。两张输入图必须是 sRGB 语义的 8-bit PNG，具有完全相同的像素宽高，并满足单边 `8192px`、总计 `8,000,000` 像素的安全上限；不一致或超限时修正 Figma node、Viewport、DPR 或截图范围，不得静默缩放或裁切图片来消除几何差异。
+
+从仓库根目录运行：
+
+```bash
+node .agents/skills/planet-figma-to-code/scripts/pixel-diff.mjs \
+  output/playwright/<任务名称>/figma-reference-<目标状态>.png \
+  output/playwright/<任务名称>/<browser-screenshot>.png \
+  output/playwright/<任务名称>/pixel-diff-<目标状态>-cycle-<闭环序号>.png \
+  ffffff
+```
+
+最后一个参数是经设计背景和浏览器 Computed Style 确认的六位 sRGB 宿主底色，`ffffff` 只适用于实际白色宿主。任一输入含透明像素而实际背景是渐变、图片或其他非纯色时，改用已经包含真实背景的上层 Figma Frame 与对应 Browser Screenshot；不得随意传白色来掩盖 Alpha 差异。
+
+脚本需要 PATH 中存在 `ffmpeg` 和 `ffprobe`。它把透明像素合成到已确认的宿主底色，再生成差异热图：白色表示合成后的 8-bit RGB 一致，红色表示差异，颜色越深代表通道差异越大；任何 8-bit 非零差异都会被增强显示，但不设置通过阈值，也不输出或维护测试 Baseline。每个闭环必须使用从未存在过的新输出路径；脚本拒绝覆盖已有 Diff，并且只有本次命令成功打印的路径才可作为本轮证据。缺少依赖、输入格式不支持、尺寸无法对齐、资源超限或运行超过 60 秒时，本轮验证不完整，报告具体阻塞，不得绕过 Pixel Diff 直接判定通过。
+
+随后把 Figma Screenshot、Browser Screenshot 和 Pixel Diff 三张图一起交给 Vision 复核：
+
+- **渲染噪声**：仅有抗锯齿、字体栅格化、阴影边缘、SVG 子像素等散点或细边差异，不修改合理实现；本轮通过，可以进入最终验收。
+- **局部真实问题**：差异形成有语义的连续区域，并能由布局、尺寸、间距、字体、颜色、边框、阴影或素材证据解释；修改实现后将 Vision 轮次重置为 `1`，重新完成阶段 A，再生成新的 Pixel Diff。
+- **结构性问题**：差异来自错误层级、组件边界、布局模型或状态；回到分析阶段重新实现，然后将 Vision 轮次重置为 `1`，重新完成阶段 A 和阶段 B。
+
+Pixel Diff 只是定位信号，不以非白像素数量、百分比或任意固定阈值替代 Vision 判断。Vision 判定真实问题时，再用 Figma 结构数据、DOM Bounding Box、Computed Style 或浏览器测量结果确认原因，不依赖差异图猜测精确 CSS 数值。
+
+不需要建立完整的 Figma Node 与 DOM Node 映射。
 
 ### 停止无效迭代
 
 - 同一主要差异经过连续两次有证据的局部修改仍未缩小时，停止微调并回到设计、组件和布局分析，只做一次根因修正。
-- 根因修正后差异仍未缩小，或确认依赖缺失字体、不可获取素材、不稳定数据、浏览器环境差异、外部权限或超出任务范围的改动时，结束当前视觉循环。
-- 结束循环时记录对比截图、测量证据、已尝试修正、剩余差异和继续所需条件；不得宣称视觉验收通过，也不得创建或更新 Baseline 来掩盖失败。
+- 根因修正后若继续验证，必须开启新的闭环并将 Vision 轮次重置为 `1`，不得把它记作第 6 轮，也不得只复核一次就进入 Pixel Diff。
+- 新闭环后差异仍未缩小，或确认依赖缺失字体、不可获取素材、不稳定数据、浏览器环境差异、外部权限或超出任务范围的改动时，结束当前视觉循环。
+- 结束循环时记录 Figma 参考图、最后的 Browser Screenshot、已生成的最近一次 Pixel Diff（若阶段 B 已执行）、测量证据、已尝试修正、剩余差异和继续所需条件；不得宣称视觉验收通过，也不得把真实差异归为噪声来掩盖失败。
 - 如果继续需要新的用户选择、权限或范围，报告具体阻塞并请求决策；获得新证据或条件后再恢复验证。
 
-## 7. 最终视觉验收与可选 Snapshot Baseline
+## 7. 最终验收与产物边界
 
-完成主要迭代且不存在已知结构性差异后，必须再次由 Playwright CLI 构造目标状态并截图，再由 Vision 与设计稿做独立的最终对比：
+一个有匹配 Figma Screenshot 的目标状态，只有同时满足以下条件才能判定通过：
 
-- 存在可在当前范围内修复的视觉差异：回到第 6 节，修改后重新进入最终验收。
-- 仅存在抗锯齿、阴影、SVG 栅格化、子像素等无视觉意义的渲染噪声：可以判定通过。
-- 仍存在结构性差异或已触发停止条件：不得判定通过；按第 6 节记录证据并报告。
+- 同一闭环已完成 3–5 轮 Vision 直接对比。
+- 最后一轮 Vision 直接对比没有可修问题。
+- Pixel Diff 使用稳定 Figma Screenshot 与该轮 Browser Screenshot 生成，输入尺寸一致且均未缩放或裁切。
+- Vision 已同时复核 Figma Screenshot、Browser Screenshot 和 Pixel Diff，并确认只剩无视觉意义的渲染噪声。
 
-Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Baseline，也不使用严格 Pixel Equality 作为通过标准。
+Pixel Diff 复核发现真实问题时，不能在当前阶段直接补一张 Diff 后结束；必须修改实现，将 Vision 轮次重置为 `1`，重新完成阶段 A 和阶段 B。仍存在结构性差异或已触发停止条件时不得判定通过，按第 6 节记录证据并报告。
 
-### 仅在明确需要时建立视觉回归用例
+Figma Screenshot、Browser Screenshot 和 Pixel Diff 只用于本次 Figma ↔ Browser 诊断与验收。Pixel Diff 是最终必需证据，但严格 Pixel Equality 不是通过标准；是否属于噪声或真实问题始终由 Vision 结合设计结构和浏览器测量证据判断。
 
-默认停留在 Playwright CLI + Vision 验收，不创建 `@playwright/test` spec 或 Snapshot Baseline。只有以下情况才进入视觉回归测试：
+### 不生成视觉回归产物
 
-- 用户明确要求新增或更新视觉回归测试文件时，可以按仓库测试分层新建或维护用例。
-- 仓库已经存在与本次目标直接相关的 Screenshot 用例，且最终 Vision 已确认的预期视觉变化使其失效时，必须维护现有用例和 Baseline；这不授权为其他目标新建视觉测试。
+本 skill 的视觉闭环到“3–5 轮 Vision 直接对比 + Pixel Diff 三图终审”为止：
 
-即使具备授权，也必须先确认：
+- 不创建或修改 `@playwright/test` Screenshot spec。
+- 不调用 `expect(page).toHaveScreenshot(...)`。
+- 不生成、更新或提交 Browser Snapshot Baseline。
+- 不修改 CI 配置，也不把 Pixel Diff 加入 CI。
+- 不把 Figma Screenshot、Browser Screenshot 或 Pixel Diff 放入测试 Snapshot 目录或提交到源码；它们只保留在被忽略的 `output/playwright/<任务名称>/` 中。
 
-- 最终 Vision 验收已经通过。
-- Browser、Viewport、字体、Locale、Timezone、Animation、数据和页面或 Story 状态可以确定性重建。
-- Baseline 能在与 CI 相同的操作系统、锁定浏览器版本和字体环境中生成；不得默认使用本机 macOS 快照满足 Ubuntu CI。
-- 目标符合仓库的测试分层；独立组件没有既有视觉回归基础设施时，报告需要项目级决策，不得把它硬塞进应用 E2E 或增加临时生产路由。
-
-满足条件时，优先使用仓库已有的容器或 CI Snapshot 更新流程，通过 `expect(page).toHaveScreenshot(...)` 为仓库要求的 Playwright Project 和平台生成 Baseline，先更新 Snapshot，再在同一环境正常运行同一用例以及项目要求的 E2E 命令。仓库没有 CI 等价生成入口、环境未固定或 CI 平台 Baseline 无法生成时，不自行发明基础设施，也不创建不可维护的本地快照；报告缺失前提并请求项目级决策。
-
-不得把 Figma Screenshot 复制或转换为 Baseline，不得手工把迭代期 CLI Screenshot 塞入 Snapshot 目录，也不得在设计验收前更新 Baseline 来消除失败。
+如果用户另行明确要求视觉回归测试，将其作为独立任务按项目测试契约处理，不得与本 skill 的 Figma 还原验收混为一体。
 
 ## 8. 完成检查
 
@@ -350,9 +395,13 @@ Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Base
 - 使用了正确素材且没有遗漏主要 UI。
 - 已使用应用路由或稳定 Storybook Story 作为与交付边界匹配的验证宿主，没有为截图添加临时生产入口。
 - Figma Frame 对应的 Viewport、代表性的更窄和更宽移动 Viewport，以及关键目标状态已在浏览器中验证；至少包含一个非 Figma Frame 宽度的 Viewport。
-- 未触发停止条件时，Playwright 截图与 Figma 设计稿的 Vision 对比已收敛，并通过独立的最终验收；已忽略的差异仅为无视觉意义的渲染噪声。
-- 触发停止条件时，未宣称视觉验收通过、未用 Baseline 掩盖失败，并已记录证据、剩余差异和继续所需条件。
-- 只有用户明确要求新视觉回归，或既有相关 Screenshot 用例被预期视觉变更影响，并且满足稳定性、测试分层与 CI 环境条件时，才创建或维护 Playwright 视觉回归；否则已记录“不适用”或未执行原因。
+- 每个有对应 Figma Frame 的目标状态均先完成了 3–5 轮 Vision 直接对比，最后一轮没有可修问题后才生成同尺寸 Pixel Diff，并完成 Vision 三图复核。
+- Pixel Diff 的 Figma 与 Browser 输入均为受支持的 8-bit PNG、尺寸完全一致且未超过资源上限；没有为了对齐而缩放或裁切任一输入。
+- 已确认用于 Alpha 合成的真实宿主底色；非纯色背景使用了包含真实背景的上层 Frame，而不是随意按白底比较。
+- 每次 Pixel Diff 使用唯一的新输出路径，且只把本次脚本成功返回的路径交给 Vision。
+- 未触发停止条件时，三图复核已经收敛；已忽略的差异仅为 Vision 结合设计结构和浏览器测量证据确认的渲染噪声。
+- 触发停止条件时，未宣称视觉验收通过、未把真实问题归为噪声，并已记录 Figma / Browser、最近 Pixel Diff（如有）、测量证据、剩余差异和继续所需条件。
+- 未创建或修改 Screenshot spec、Snapshot Baseline 或 CI；Figma Screenshot、Browser Screenshot 与 Pixel Diff 仅保留在被忽略的 `output/playwright/<任务名称>/` 中，未提交到源码。
 - 没有明显 Overflow 或 Layout Shift。
 
 ### 工程质量
@@ -377,7 +426,7 @@ Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Base
 - 运行受影响范围的最小单元、组件或浏览器测试。
 - 交付前运行 `pnpm verify`。
 - 新增或修改 Story、使用 Storybook 作为组件验证宿主，或改变共享组件公共 API 时，额外运行 `pnpm storybook:build`。
-- 修改 Route、部署路径、PWA、Playwright 用例或 Snapshot Baseline 时，额外运行 `pnpm test:e2e`。
+- 修改 Route、部署路径、PWA 或既有 Playwright 行为用例时，额外运行 `pnpm test:e2e`。
 - `pnpm verify` 不包含 Storybook 构建和 E2E；无法执行的命令必须说明原因，不得宣称已通过。
 
 ## 9. 完成报告
@@ -415,16 +464,21 @@ Figma 设计图只用于 Figma ↔ Browser 验收，不是长期 Playwright Base
 - Figma Frame 对应的 Viewport：
 - 额外移动 Viewport：
 - 目标状态：
-- Vision 迭代轮次与主要修正：
+- Pixel Diff 宿主底色或包含真实背景的 Frame：
+- Vision 直接对比轮次（每个闭环 3–5 轮）与主要发现：
+- Pixel Diff 终审轮次与回流情况：
+- 最终 Figma Screenshot：
+- 最终 Browser Screenshot：
+- 最终 Pixel Diff：
+- Vision 三图复核（噪声 / 真实问题及依据）：
 - 最终对比结论：
-- Playwright Snapshot Baseline（已维护 / 不适用 / 未执行及原因）：
 
 剩余视觉差异：
 - ...
 
 停止条件与证据：
 - 未触发 / 触发原因：
-- 最后截图与测量证据：
+- 最后 Figma / Browser、最近 Pixel Diff（如有）与测量证据：
 - 已尝试方案：
 
 工程验证：
