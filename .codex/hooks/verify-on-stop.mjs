@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -9,7 +10,7 @@ const result = spawnSync("pnpm", ["verify"], {
 });
 
 if (result.error) {
-  console.error(`Failed to start pnpm verify: ${result.error.message}`);
+  process.stderr.write(`Failed to start pnpm verify: ${result.error.message}\n`);
 }
 
 if (result.status === 0) {
