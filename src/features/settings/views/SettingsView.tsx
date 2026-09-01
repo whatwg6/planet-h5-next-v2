@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { BatteryCapIcon, CellularIcon, ChevronLeftIcon, WifiIcon } from "@/shared/assets/icons";
+import { ChevronLeftIcon } from "@/shared/assets/icons";
+import { MobileStatusBar } from "@/shared/ui";
 import { SettingGroup, type SettingItemData } from "../components/SettingGroup";
 import { SettingSwitch } from "../components/SettingSwitch";
 
@@ -33,23 +34,6 @@ const advancedItems: SettingItemData[] = [
     label: "用餐人员接收邮件和短信",
   },
 ];
-
-function StatusBar() {
-  return (
-    <div aria-hidden className="relative h-[54px] w-full text-white">
-      <span className="absolute left-[13.2%] top-[18px] text-[17px] font-semibold leading-[22px]">
-        9:41
-      </span>
-      <span className="absolute right-[34px] top-[22px] h-[13px] w-[27px]">
-        <span className="absolute inset-0 rounded-[4px] border border-white/35" />
-        <span className="absolute bottom-[2px] left-[2px] top-[2px] w-[21px] rounded-[2.5px] bg-white" />
-        <BatteryCapIcon className="absolute -right-[2px] top-[4px] h-1 w-[2px]" />
-      </span>
-      <WifiIcon className="absolute right-[67px] top-[23px] h-[13px] w-[18px]" />
-      <CellularIcon className="absolute right-[93px] top-[23px] h-[13px] w-5" />
-    </div>
-  );
-}
 
 export function SettingsView() {
   const [mealEnabled, setMealEnabled] = useState(true);
@@ -96,7 +80,7 @@ export function SettingsView() {
     <main className="relative h-dvh min-h-[568px] w-full overflow-hidden rounded-[48px] bg-background-base font-['PingFang_SC','PingFang_SC',-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif text-content-primary">
       <h1 className="sr-only">设置</h1>
       <header className="absolute inset-x-0 top-0 z-10 border-b border-container-border bg-background-base">
-        <StatusBar />
+        <MobileStatusBar />
         <div className="relative flex h-11 items-center justify-between pl-1.5 pr-4">
           <button
             aria-label="返回"

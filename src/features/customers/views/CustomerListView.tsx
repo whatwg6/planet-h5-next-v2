@@ -5,13 +5,13 @@ import { CustomerCard } from "../components/CustomerCard";
 import { CustomerSearchField } from "../components/CustomerSearchField";
 
 const customers = [
-  { name: "美好科技集团" },
-  { name: "星河控股集团星河控股集团星河控股集团", isTest: true },
-  { name: "北京艾雅科技有限公司" },
-  { name: "北京创新科技有限公司" },
-  { name: "北京优美可视科技有限公司", isTest: true },
-  { name: "上海艾莉森元宇宙有限公司" },
-  { name: "上海大作为数据咨询有限公司" },
+  { id: "meihao", name: "美好科技集团" },
+  { id: "xinghe", name: "星河控股集团星河控股集团星河控股集团", isTest: true },
+  { id: "aiya", name: "北京艾雅科技有限公司" },
+  { id: "chuangxin", name: "北京创新科技有限公司" },
+  { id: "youmei", name: "北京优美可视科技有限公司", isTest: true },
+  { id: "ailisen", name: "上海艾莉森元宇宙有限公司" },
+  { id: "dazuowei", name: "上海大作为数据咨询有限公司" },
 ];
 
 export function CustomerListView() {
@@ -72,9 +72,9 @@ export function CustomerListView() {
         <section aria-label="客户列表" className="flex flex-col gap-3 px-3 pb-5 pt-2">
           {results.map((customer) => (
             <CustomerCard
-              key={customer.name}
+              key={customer.id}
               {...customer}
-              onClick={() => navigate("/meal-plans")}
+              onClick={() => navigate(`/customers/${customer.id}`)}
             />
           ))}
         </section>
