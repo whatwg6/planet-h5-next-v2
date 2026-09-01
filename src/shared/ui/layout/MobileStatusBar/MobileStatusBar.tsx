@@ -2,7 +2,10 @@ import { BatteryCapIcon, CellularIcon, WifiIcon } from "@/shared/assets/icons";
 
 export function MobileStatusBar() {
   return (
-    <div aria-hidden className="relative h-[54px] w-full text-white">
+    <div
+      aria-hidden
+      className="relative h-[54px] w-full text-white [font-family:var(--font-family-status)]"
+    >
       <span className="absolute left-[13.2%] top-[18px] text-[17px] font-semibold leading-[22px]">
         9:41
       </span>

@@ -18,8 +18,8 @@ export function SettingSwitch({ checked, label, onChange }: SettingSwitchProps) 
     >
       <span
         aria-hidden
-        className={`absolute top-0.5 size-[27px] rounded-full bg-white shadow-[0_3px_8px_rgb(0_0_0/15%),0_3px_1px_rgb(0_0_0/6%)] transition-transform ${
-          checked ? "translate-x-[22px]" : "translate-x-0.5"
+        className={`absolute left-0.5 top-0.5 size-[27px] rounded-full bg-white shadow-[0_3px_8px_rgb(0_0_0/15%),0_3px_1px_rgb(0_0_0/6%)] transition-transform ${
+          checked ? "translate-x-5" : "translate-x-0"
         }`}
       />
     </button>
