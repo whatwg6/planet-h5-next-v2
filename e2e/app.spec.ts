@@ -19,6 +19,9 @@ test("opens meal plans and switches credential types", async ({ page }) => {
   await page.goto("./#/");
   await page.getByRole("button", { name: "查看客户：美好科技集团" }).click();
 
+  await expect(page.getByRole("heading", { name: "美好科技有限公司" })).toBeVisible();
+  await page.getByRole("button", { name: "用餐计划" }).click();
+
   await expect(page.getByRole("heading", { name: "美好科技-北京...用餐计划" })).toBeVisible();
   await expect(page.getByText("12:00 送达")).toHaveCount(2);
 
