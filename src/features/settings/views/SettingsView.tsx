@@ -77,9 +77,9 @@ export function SettingsView() {
   });
 
   return (
-    <main className="relative h-dvh min-h-[568px] w-full overflow-hidden rounded-[48px] bg-background-base font-['PingFang_SC','PingFang_SC',-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif text-content-primary">
+    <main className="relative h-dvh min-h-[568px] w-full overflow-hidden rounded-[48px] bg-background-base text-content-primary [box-shadow:0_0_0_100vmax_var(--color-device-surround)] [font-family:var(--font-family-interface)]">
       <h1 className="sr-only">设置</h1>
-      <header className="absolute inset-x-0 top-0 z-10 border-b border-container-border bg-background-base">
+      <header className="absolute inset-x-0 top-0 z-10 bg-background-base shadow-[inset_0_-1px_0_var(--color-container-border)]">
         <MobileStatusBar />
         <div className="relative flex h-11 items-center justify-between pl-1.5 pr-4">
           <button
@@ -88,7 +88,7 @@ export function SettingsView() {
             onClick={() => window.history.back()}
             type="button"
           >
-            <ChevronLeftIcon aria-hidden className="h-[18px] w-2.5" />
+            <ChevronLeftIcon aria-hidden className="size-6" />
           </button>
           <span className="absolute left-1/2 -translate-x-1/2 text-[17px] font-medium leading-6">
             设置

@@ -41,10 +41,7 @@ function SettingItemContent({ item }: { item: SettingItemData }) {
           </span>
         )}
         {item.trailing ?? (
-          <ChevronRightIcon
-            aria-hidden
-            className="h-5 w-5 shrink-0 -scale-x-100 p-[3px] text-content-tertiary"
-          />
+          <ChevronRightIcon aria-hidden className="size-5 shrink-0 text-content-tertiary" />
         )}
       </span>
     </>
